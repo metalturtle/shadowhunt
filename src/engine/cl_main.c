@@ -94,9 +94,10 @@ void cl_readEntities(bitstream_t *readStream)
 
     entVec_t *vec = ent_getPos(0);
 
-    float diff[] = {-100/2, -100/2};
-    vec3set(worldCamera.window, vec->vec);
-    vec3add(worldCamera.window, worldCamera.window, diff);
+    float diff[] = {-30, -30};
+    rect2xywh(worldCamera.window, diff[0], diff[1], getScreenWidth(), getScreenHeight());
+    vec2add(worldCamera.window, worldCamera.window, vec->vec);
+    
 }
 
 void cl_readServerCmd(bitstream_t *readStream)

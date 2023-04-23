@@ -289,5 +289,6 @@ extern void cl_packetEvent(netaddr_t *fromAddress, byte *data, int len);
 extern server_t server;
 extern client_t client;
 
+extern void world_load();
 
 #endif

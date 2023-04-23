@@ -1,0 +1,154 @@
+/********************MOVEMENT********************/
+
+typedef struct entityMoveList_st
+{
+    vector(int) entID;
+    vector(entVec_t) pos;
+    vector(entVec_t) dir;
+    vector(entRect_t) rect;
+    vector(float) speed;
+    int count;
+} entityMoveList_t;
+
+extern entityMoveList_t *oldMoveList;
+extern entityMoveList_t *currentMoveList;
+extern entityMoveList_t newMoveList;
+
+extern void ent_initMoveList();
+extern int ent_addMove(int entID, vec3_t pos, vec3_t dir, rect2_t rect, float speed);
+extern entVec_t *ent_getMovePos(int moveID);
+extern entVec_t *ent_getMoveDir(int moveID);
+extern entRect_t *ent_getMoveRect(int moveID);
+extern float ent_getMoveSpeed(int moveID);
+extern void ent_resetMove();
+extern void ent_runMove();
+
+/********************MOVEMENT********************/
+
+void ent_initMoveList()
+{
+    int initSize = ENT_INITSIZE;
+    vecinit(GENERALZONE, entityMoveList[0].entID, int, initSize);
+    vecinit(GENERALZONE, entityMoveList[0].pos, entVec_t, initSize);
+    vecinit(GENERALZONE, entityMoveList[0].dir, entVec_t, initSize);
+    vecinit(GENERALZONE, entityMoveList[0].speed, float, initSize);
+    vecinit(GENERALZONE, entityMoveList[0].rect, entRect_t, initSize);
+    entityMoveList[0].count = 0;
+
+    vecinit(GENERALZONE, entityMoveList[1].entID, int, initSize);
+    vecinit(GENERALZONE, entityMoveList[1].pos, entVec_t, initSize);
+    vecinit(GENERALZONE, entityMoveList[1].dir, entVec_t, initSize);
+    vecinit(GENERALZONE, entityMoveList[1].speed, float, initSize);
+    vecinit(GENERALZONE, entityMoveList[1].rect, entRect_t, initSize);
+    entityMoveList[1].count = 0;
+
+    vecinit(GENERALZONE, newMoveList.entID, int, initSize);
+    vecinit(GENERALZONE, newMoveList.pos, entVec_t, initSize);
+    vecinit(GENERALZONE, newMoveList.dir, entVec_t, initSize);
+    vecinit(GENERALZONE, newMoveList.speed, float, initSize);
+    vecinit(GENERALZONE, newMoveList.rect, entRect_t, initSize);
+    newMoveList.count = 0;
+
+    oldMoveList = &entityMoveList[0];
+    currentMoveList = &entityMoveList[1];
+}
+
+int ent_addMove(int entID, vec3_t pos, vec3_t dir, rect2_t rect, float speed)
+{
+    int id;
+    entVec_t entPos;
+    entVec_t entDir;
+    entRect_t entRect;
+
+    vec3set(entPos.vec, pos);
+    vec3set(entDir.vec, dir);
+    vec3set(entRect.rect, rect);
+
+    id = currentMoveList->count;
+
+    if(currentMoveList->count < vecsize(currentMoveList->entID))
+    {
+        vecset(currentMoveList->entID, id, entID);
+        vecset(currentMoveList->pos, id, entPos);
+        vecset(currentMoveList->dir, id, entDir);
+        vecset(currentMoveList->speed, id, speed);
+        vecset(currentMoveList->rect, id, entRect);
+
+        vecset(newMoveList.entID, id, entID);
+        vecset(newMoveList.pos, id, entPos);
+        vecset(newMoveList.dir, id, entDir);
+        vecset(newMoveList.speed, id, speed);
+        vecset(newMoveList.rect, id, entRect);
+    }
+    else {
+        vecpush(currentMoveList->entID, int, entID);
+        vecpush(currentMoveList->pos, entVec_t, entPos);
+        vecpush(currentMoveList->dir, entVec_t, entDir);
+        vecpush(currentMoveList->speed, float, speed);
+        vecpush(currentMoveList->rect, entRect_t, entRect);
+
+        vecpush(oldMoveList->entID, int, entID);
+        vecpush(oldMoveList->pos, entVec_t, entPos);
+        vecpush(oldMoveList->dir, entVec_t, entDir);
+        vecpush(oldMoveList->speed, float, speed);
+        vecpush(oldMoveList->rect, entRect_t, entRect);
+
+        vecpush(newMoveList.entID, int, entID);
+        vecpush(newMoveList.pos, entVec_t, entPos);
+        vecpush(newMoveList.dir, entVec_t, entDir);
+        vecpush(newMoveList.speed, float, speed);
+        vecpush(newMoveList.rect, entRect_t, entRect);
+    }
+
+    newMoveList.count++;
+    currentMoveList->count++;
+
+    return id;
+}
+
+entVec_t *ent_getMovePos(int moveID)
+{
+    return &vecget(oldMoveList->pos, moveID);
+}
+
+entVec_t *ent_getMoveDir(int moveID)
+{
+    return &vecget(oldMoveList->dir, moveID);
+}
+
+float ent_getMoveSpeed(int moveID)
+{
+    return vecget(oldMoveList->speed, moveID);
+}
+
+entRect_t *ent_getRect(int moveID)
+{
+    return &vecget(oldMoveList->rect, moveID);
+}
+
+void ent_runMove()
+{
+    vec3_t pos;
+    vec3_t dir;
+
+    oldMoveList->count = 0;
+    for(int i = 0; i < currentMoveList->count; i++)
+    {
+        vec3set(pos, vecget(currentMoveList->pos, i).vec);
+        vec3set(dir ,vecget(currentMoveList->dir, i).vec);
+        vec3mult(dir, vecget(currentMoveList->speed, i));
+        vec3add(pos, pos, dir);
+        vec3set(vecget(oldMoveList->pos, i).vec, pos);
+
+        oldMoveList->count++;
+    }
+
+    currentMoveList->count = 0;
+}
+
+void ent_resetMove()
+{
+    // vecreset(entityMoveList.entID);
+    // vecreset(entityMoveList.dir);
+    // vecreset(entityMoveList.speed);
+}

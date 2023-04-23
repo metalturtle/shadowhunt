@@ -1,12 +1,14 @@
 
 #include <stdarg.h>
-#include <glad/glad.h>
-#include <GLFW/glfw3.h>
-
-#include "../../basic/basic.h"
-#include "../../basic/world_def.h"
-#include "../../engine/engine.h"
+#include "glad/glad.h"
+#include "GLFW/glfw3.h"
+#include "../lib/cJSON/cJSON.c"
+#include "../basic/basic.h"
+#include "../basic/world_def.h"
+#include "../engine/engine.h"
 #include "../render/render.h"
+
+
 
 GLFWwindow *window;
 static byte isServer;
@@ -160,12 +162,15 @@ int main(int argc, char **argv)
 
     netcon_init();
 
+    openLevelFile();
+
     eng_init();
 
     if(!cv_isServer->intval) {
-        printf("before init window\n");
         window = initWindow(swidth, sheight);
-        initGraphicsHandle(swidth, sheight, GENERALZONE);
+        initGraphicsHandle(swidth, sheight, GENERALZONE, qtrue);
+        closeLevelFile();
+
         while(!glfwWindowShouldClose(window))
         {
             scanSysEvents();
@@ -176,6 +181,9 @@ int main(int argc, char **argv)
         }
     }
     else {
+        initGraphicsHandle(swidth, sheight, GENERALZONE, qfalse);
+        closeLevelFile();
+
         while(qtrue)
         {
             scanSysEvents();

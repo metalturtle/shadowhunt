@@ -1,10 +1,10 @@
 #ifndef RENDER_H
 #define RENDER_H
 
-#include "../../basic/basic.h"
-#include "../../basic/world_def.h"
-#include "../../engine/engine.h"
-#include "../../engine/entity.h"
+#include "../basic/basic.h"
+#include "../basic/world_def.h"
+#include "../engine/engine.h"
+#include "../engine/entity.h"
 
 #define VERTSIZE 32
 
@@ -96,7 +96,7 @@ extern camera_t worldCamera;
 extern entitySpriteList_t entSpriteList;
 extern animatedSpriteList_t animSpriteList;
 
-extern int initGraphicsHandle(int swidth, int height, int zoneid);
+extern int initGraphicsHandle(int swidth, int height, int zoneid, int isClient);
 extern int render();
 
 #endif

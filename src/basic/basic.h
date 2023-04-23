@@ -10,6 +10,7 @@ extern "C" {
 #include <stdarg.h>
 #include <stdlib.h>
 #include <sys/time.h>
+#include "../lib/cJSON/cJSON.h"
 
 
 #define MAX(a,b) (a)>(b)?(a):(b)
@@ -18,6 +19,7 @@ extern "C" {
 #define FRACT(a) ((a) - (int)(a))
 #define CEIL(a) ((float)(int)((a) + (1 - FRACT(a))))
 #define FLOOR(a) ((float)(int)(a))
+#define ABS(a) (((a) < 0)? -(a) : (a))
 
 typedef enum
 {
@@ -311,7 +313,17 @@ extern void s2imap_remove(s2imap_t *smap, const char *key);
 extern void eng_init();
 extern void eng_runFrame();
 
+/********************FILES********************/
 
+extern char *getFileString(const char *filename, int zoneid);
+
+extern void openLevelFile();
+extern char *getLevelFileString();
+extern cJSON *getLevelJSON();
+extern void closeLevelFile();
+
+extern float getScreenWidth();
+extern float getScreenHeight();
 
 #ifdef __cplusplus
 }

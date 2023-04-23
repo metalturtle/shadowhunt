@@ -9,7 +9,7 @@
 #include <sys/time.h>
 #include <sys/ioctl.h>
 #include <errno.h>
-#include "../../basic/basic.h"
+#include "../basic/basic.h"
 
 struct sockaddr_in sockAddr;
 struct sockaddr_in sendAddr;

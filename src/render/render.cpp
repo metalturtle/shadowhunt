@@ -1,14 +1,12 @@
-#include "../../basic/world_def.h"
+#include "../basic/world_def.h"
+#include "cJSON/cJSON.h"
 #include "render.h"
-#include "../../lib/cJSON/cJSON.c"
 #include "png_handle.h"
-#include "../lib/glad/glad.c"
-#include "../../basic/files.h"
-#include "../lib/glm/glm.hpp"
-#include "../lib/glm/gtc/matrix_transform.hpp"
-#include "../lib/glm/gtc/type_ptr.hpp"
-
-// camera_t worldCamera;
+#include "glad/glad.c"
+#include "glm/glm.hpp"
+#include "glm/gtc/matrix_transform.hpp"
+#include "glm/gtc/type_ptr.hpp"
+#include "../movement/movement.h"
 
 char infoLog[512];
 
@@ -65,15 +63,19 @@ void loadAnimTexture(const char *path, textureImage_t *texImg, int row, int col,
 
     int mipMapLevelCount = 1;
     int layerCount = row * col;
-    // int layerCount = 2;
     glTexStorage3D(GL_TEXTURE_2D_ARRAY, mipMapLevelCount, GL_RGBA8, width, height, layerCount);
 
     glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0, width, height, layerCount, GL_RGBA, GL_UNSIGNED_BYTE, texImg->data);
 
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    // glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    // glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    // glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    // glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 }
 
 int createVertexShader(const char *fileName)
@@ -316,7 +318,7 @@ void loadTextureAreas(cJSON *jsonTexAreas)
     TexRegHandle.texRegCount = lines;
 }
 
-void initTextures()
+void initTextures(int isClient)
 {
     char *fbuf;
     char chartemp[256], *tempc;
@@ -331,35 +333,41 @@ void initTextures()
     char **demTexList = getDemandTexList(texdemand);
     texDemCount = cJSON_GetArraySize(texdemand);
 
+    TexRegHandle.texNameMap = s2imap_create(GENERALZONE);
+    TexImgHandle.texImgCount = 0;
+
     for (int i = 0; i < texDemCount; i++)
     {
         getTexName(demTexList[i], chartemp);
         s2imap_put(TexRegHandle.texNameMap, chartemp, i);
     }
 
-    glClearColor (0.2, 0.2, 0.8, 0.0);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    TexImgHandle.texImgCount = texDemCount;
-    TexImgHandle.texImgList = (textureImage_t *)zidmalloc(GENERALZONE
-        , sizeof(textureImage_t) * texDemCount);
-
-    TexImgHandle.texNameList = (unsigned int *) zidmalloc(GENERALZONE
-        , sizeof(unsigned int) * texDemCount);
-    
-    for (int i = 0; i < texDemCount; i++)
+    if(isClient)
     {
-        strcpy(chartemp, levelFile);
-        tempc = chartemp + strlen(levelFile);
-        strcpy(tempc, demTexList[i]);
+        glClearColor (0.2, 0.2, 0.8, 0.0);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        TexImgHandle.texImgCount = texDemCount;
+        TexImgHandle.texImgList = (textureImage_t *)zidmalloc(GENERALZONE
+            , sizeof(textureImage_t) * texDemCount);
+
+        TexImgHandle.texNameList = (unsigned int *) zidmalloc(GENERALZONE
+            , sizeof(unsigned int) * texDemCount);
+
+        for (int i = 0; i < texDemCount; i++)
+        {
+            strcpy(chartemp, levelFile);
+            tempc = chartemp + strlen(levelFile);
+            strcpy(tempc, demTexList[i]);
         
+            loadTexture(chartemp, &TexImgHandle.texImgList[i], &TexImgHandle.texNameList[i]);
+            // loadAnimTexture(chartemp, &TexImgHandle.texImgList[i], 1, 1, &TexImgHandle.texNameList[i]);
+        }
 
-        loadTexture(chartemp, &TexImgHandle.texImgList[i], &TexImgHandle.texNameList[i]);
+        cJSON *jsonTexAreas = cJSON_GetObjectItemCaseSensitive(json, "texture");
+        loadTextureAreas(jsonTexAreas);
     }
-
-    cJSON *jsonTexAreas = cJSON_GetObjectItemCaseSensitive(json, "texture");
-    loadTextureAreas(jsonTexAreas);
-
+    
     cJSON_free(json);
     zidfree(fbuf);
 }
@@ -368,7 +376,7 @@ extern void sprite_init();
 extern void sprite_add(char *spriteName, int id);
 extern int sprite_getID(char *spriteName);
 
-void initSprites()
+void initSprites(int isClient)
 {
     char *fbuf;
     cJSON *jsonSpriteList;
@@ -388,8 +396,6 @@ void initSprites()
     int row;
     int col;
 
-    SpriteHandle.spriteVAO = createVAO(vertices, indices, sizeof(vertices), sizeof(indices));
-
     fbuf = getFileString("levels//config//sprite.json", TEMPORARYZONE);
 
     cJSON *json = cJSON_Parse(fbuf);
@@ -404,6 +410,12 @@ void initSprites()
     SpriteHandle.texNameList = (unsigned int *) zidmalloc(PERMANENTZONE, sizeof(unsigned int) * spriteLen);
     
     sprite_init();
+
+    if(isClient)
+    {
+        SpriteHandle.spriteVAO = createVAO(vertices, indices, sizeof(vertices), sizeof(indices));
+        AnimSpriteHandle.spriteVAO = SpriteHandle.spriteVAO;
+    }
 
     jsonSpriteObj = NULL;
 
@@ -426,18 +438,18 @@ void initSprites()
 
         printf("reading file: %s\n", spriteFilePath);
         
-        loadTexture(spriteFilePath, &SpriteHandle.texImgList[i], &SpriteHandle.texNameList[i]);
+        if(isClient)
+        {
+            loadTexture(spriteFilePath, &SpriteHandle.texImgList[i], &SpriteHandle.texNameList[i]);
+        }
 
         sprite_add(spriteObjName, i, SPRITE_TYPE_STATIC);
 
         i++;
     }
 
-    AnimSpriteHandle.spriteVAO = SpriteHandle.spriteVAO;
-
     jsonSpriteList = cJSON_GetObjectItemCaseSensitive(json, "animated_sprite");
     spriteLen = cJSON_GetArraySize(jsonSpriteList);
-    printf("anim spriteLen %d\n", spriteLen);
 
     jsonSpriteFolder = cJSON_GetObjectItemCaseSensitive(jsonSpriteList, "folder");
     spriteFolder = cJSON_GetStringValue(jsonSpriteFolder);
@@ -445,7 +457,6 @@ void initSprites()
     AnimSpriteHandle.animSpriteList = (animatedSpriteImage_t *) zidmalloc(PERMANENTZONE, sizeof(animatedSpriteImage_t) * spriteLen);
 
     jsonSpriteObj = NULL;
-
     i=0;
     cJSON_ArrayForEach(jsonSpriteObj, jsonSpriteList)
     {
@@ -473,7 +484,6 @@ void initSprites()
 
         printf("reading file: %s\n", spriteFilePath);
     
-
         jsonNumVal = cJSON_GetObjectItemCaseSensitive(jsonSpriteObj, "row");
         row = cJSON_GetNumberValue(jsonNumVal);
         jsonNumVal = cJSON_GetObjectItemCaseSensitive(jsonSpriteObj, "col");
@@ -483,8 +493,10 @@ void initSprites()
         AnimSpriteHandle.animSpriteList[i].col = col;
         AnimSpriteHandle.animSpriteList[i].total = row * col;
 
-        // loadTexture(spriteFilePath, &AnimSpriteHandle.animSpriteList[i].texImage, &AnimSpriteHandle.animSpriteList[i].texName);
-        loadAnimTexture(spriteFilePath, &AnimSpriteHandle.animSpriteList[i].texImage, row, col, &AnimSpriteHandle.animSpriteList[i].texName);
+        if(isClient)
+        {
+            loadAnimTexture(spriteFilePath, &AnimSpriteHandle.animSpriteList[i].texImage, row, col, &AnimSpriteHandle.animSpriteList[i].texName);
+        }
 
         sprite_add(spriteObjName, i, SPRITE_TYPE_ANIM);
 
@@ -512,13 +524,13 @@ void drawRect(int texregid)
 
     trans = glm::translate(trans, glm::vec3(-camera.window[0], -camera.window[1], 0.0f));
 
+    glUseProgram(shaderProgram);
     unsigned int transformLoc = glGetUniformLocation(shaderProgram, "transform");
     glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, TexImgHandle.texNameList[texid]);
     glBindVertexArray(VAO);
-    glUseProgram(shaderProgram);
     glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
 }
 
@@ -532,16 +544,16 @@ void drawSprite(int spriteID, float x, float y, float w, float h)
     camera_t camera = GraphicsHandle.camera;
     unsigned int texName = SpriteHandle.texNameList[spriteID];
 
-    glm::mat4 trans = glm::mat4(1.0f);
-    trans = glm::ortho(0.0f, swidth / cellsize, 0.0f, sheight / cellsize, -10.0f, 100.0f);
-
-    trans = glm::translate(trans, glm::vec3(-camera.window[0] + x, -camera.window[1] + y, 0.0f));
-
     w /= cellsize;
     h /= cellsize;
+
+    glm::mat4 trans = glm::mat4(1.0f);
+    trans = glm::ortho(0.0f, swidth / cellsize, 0.0f, sheight / cellsize, -10.0f, 100.0f);
+    trans = glm::translate(trans, glm::vec3(-camera.window[0] + x, -camera.window[1] + y, 0.0f));
     trans = glm::scale(trans, glm::vec3(w, h, 1.0f));
-    
-    trans = glm::rotate(trans, 20.0f, glm::vec3(0.0f, 0.0f, 1.0f));
+    trans = glm::rotate(trans, 0.0f, glm::vec3(0.0f, 0.0f, 1.0f));
+
+    glUseProgram(shaderProgram);
 
     unsigned int transformLoc = glGetUniformLocation(shaderProgram, "transform");
     glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
@@ -549,11 +561,10 @@ void drawSprite(int spriteID, float x, float y, float w, float h)
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texName);
     glBindVertexArray(VAO);
-    glUseProgram(shaderProgram);
     glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
 }
 
-void drawAnimSprite(entitySprite_t *entSprite, animatedSprite_t *animSprite)
+void drawAnimSprite(animatedSprite_t *entSprite)
 {
     int shaderProgram = vecget(GraphicsHandle.shaderProgramList, 1);
     int VAO = AnimSpriteHandle.spriteVAO;
@@ -564,43 +575,40 @@ void drawAnimSprite(entitySprite_t *entSprite, animatedSprite_t *animSprite)
     unsigned int texName;
 
     animatedSpriteImage_t *animSpriteImage;
-
     animSpriteImage = &AnimSpriteHandle.animSpriteList[entSprite->texID];
     texName = animSpriteImage->texName;
 
-    glm::mat4 trans = glm::mat4(1.0f);
-    trans = glm::ortho(0.0f, swidth / cellsize, 0.0f, sheight / cellsize, -10.0f, 100.0f);
-
     float x = entSprite->pos[0];
     float y = entSprite->pos[1];
-    float w = entSprite->rect[2];
-    float h = entSprite->rect[3];
+    float w = entSprite->rect[2]/cellsize;
+    float h = entSprite->rect[3]/cellsize;
 
+    glm::mat4 trans = glm::mat4(1.0f);
+    trans = glm::ortho(0.0f, swidth / cellsize, 0.0f, sheight / cellsize, -10.0f, 100.0f);
     trans = glm::translate(trans, glm::vec3(-camera.window[0] + x, -camera.window[1] + y, 0.0f));
-
-    w /= cellsize;
-    h /= cellsize;
     trans = glm::scale(trans, glm::vec3(w, h, 1.0f));
     
-    trans = glm::rotate(trans, 20.0f, glm::vec3(0.0f, 0.0f, 1.0f));
+    glUseProgram(shaderProgram);
 
     unsigned int transformLoc = glGetUniformLocation(shaderProgram, "transform");
     glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
 
-    float curLayer = animSprite->curSprite*animSpriteImage->total;
-
+    float curLayer = entSprite->curSprite*animSpriteImage->total;
     glUniform1f(glGetUniformLocation(shaderProgram, "currentLayer"), curLayer);
+
+    glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D_ARRAY, texName);
-    glBindTexture(GL_TEXTURE_2D, texName);
     glBindVertexArray(VAO);
-    glUseProgram(shaderProgram);
     glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
+
 }
 
 int render()
 {
     float col = 0.1f;
+    entitySprite_t *entSprite;
     animatedSprite_t *animSprite;
+    // int shaderProgram;
 
     glClearColor(col ,col , col, 1.0);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -609,6 +617,10 @@ int render()
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     rect2xy(GraphicsHandle.camera.window, worldCamera.window[0], worldCamera.window[1]);
+
+    // shaderProgram = vecget(GraphicsHandle.shaderProgramList, 0);
+    // glUseProgram(shaderProgram);
+
     for(int i = 0; i < TexRegHandle.texRegCount; i++)
     {
         if(checkRectIntersect(TexRegHandle.texRegList[i].area, GraphicsHandle.camera.window))
@@ -617,55 +629,76 @@ int render()
         }
     }
 
-    int k = 0;
-    for(int i = 0; i < vecsize(entSpriteList.entSprite); i++)
+    for(int i = 0; i < entSpriteList.renderSpriteCount; i++)
     {
-        entitySprite_t *entSprite;
-        entSprite = &vecget(entSpriteList.entSprite, i);
-
-        if(entSprite->type == SPRITE_TYPE_STATIC)
-        {
-            drawSprite(entSprite->texID,
+        entSprite = &entSpriteList.renderSpriteList[i];
+        drawSprite(entSprite->texID,
                 entSprite->pos[0], entSprite->pos[1],
                 entSprite->rect[2], entSprite->rect[3]);
-        }
-        if(entSprite->type == SPRITE_TYPE_ANIM)
-        {
-            animSprite = &vecget(animSpriteList.animSprite, k++);
-            drawAnimSprite(entSprite, animSprite);
-        }
     }
+    
+    // shaderProgram = vecget(GraphicsHandle.shaderProgramList, 1);
+    // glUseProgram(shaderProgram);
+
+    rect2_t wall;
+    for(int i = 0; i < world.worldWallSize; i++)
+    {
+        rect2set(wall, world.worldWallArray[i].rect);
+
+        drawSprite(2, wall[0], wall[1], wall[2], wall[3]);
+    }
+
+    for(int i = 0; i < animSpriteList.renderSpriteCount; i++)
+    {
+        animSprite = &animSpriteList.renderSpriteList[i];
+        drawAnimSprite(animSprite);
+    }
+
+    // runPhysics();
 
     return 0;
 }
 
 /********************INIT GRAPHICS HANDLE********************/
 
-int initGraphicsHandle(int sx, int sy, int genzoneid)
+int initGraphicsHandle(int sx, int sy, int genzoneid, int isClient)
 {
     GraphicsHandle.swidth = sx;
     GraphicsHandle.sheight = sy;
     GraphicsHandle.genzoneid = genzoneid;
     GraphicsHandle.cellsize = 10;
-    vecinit(genzoneid, GraphicsHandle.shaderProgramList, unsigned int, 10);
-    vecinit(genzoneid, GraphicsHandle.VAOList, unsigned int, 10);
 
     rect2xywh(GraphicsHandle.camera.window, 220, 220,
      GraphicsHandle.swidth/10,
      GraphicsHandle.sheight/10);
 
-    TexImgHandle.texImgCount = 0;
+    if(isClient)
+    {
+        vecinit(genzoneid, GraphicsHandle.shaderProgramList, unsigned int, 10);
+        vecinit(genzoneid, GraphicsHandle.VAOList, unsigned int, 10);
 
-    TexRegHandle.texNameMap = s2imap_create(GENERALZONE);
-    glViewport(0, 0, GraphicsHandle.swidth, GraphicsHandle.sheight);
+        glViewport(0, 0, GraphicsHandle.swidth, GraphicsHandle.sheight);
 
-    createVertexShader("shaders//vertex.glsl");
-    createFragmentShader("shaders//fragment.glsl");
-    createFragmentShader("shaders//texArrayFragment.glsl");
+        createVertexShader("shaders//vertex.glsl");
+        createFragmentShader("shaders//fragment.glsl");
+        createFragmentShader("shaders//texArrayFragment.glsl");
+    }
 
-    initTextures();
+    initTextures(isClient);
 
-    initSprites();
+    initSprites(isClient);
+
+    // initPhysics();
 
     return 0;
+}
+
+float getScreenWidth()
+{
+    return GraphicsHandle.swidth;
+}
+
+float getScreenHeight()
+{
+    return GraphicsHandle.sheight;
 }

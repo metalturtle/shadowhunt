@@ -1,0 +1,10 @@
+.vscode
+bkp
+build/*
+levels
+res
+src/lib
+src/system/lib
+test
+plan.txt
+lib

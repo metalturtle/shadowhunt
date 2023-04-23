@@ -1,5 +1,6 @@
 #include "entity.h"
 #include "engine.h"
+#include "../movement/movement.h"
 
 int mainEnt;
 
@@ -7,13 +8,14 @@ entCreator_t entCreatorList[ENT_CREATORSIZE];
 int entCreatorLen = 0;
 
 entityList_t entList;
-entityMove_t entityMoveList;
 entityThinkList_t entThinkList;
 entitySerializeList_t entSerializeList;
 entitySpriteList_t entSpriteList;
 animatedSpriteList_t animSpriteList;
 s2imap_t *spriteNameMap;
 s2imap_t *animSpriteNameMap;
+
+entityMoveList_t entMoveList;
 
 int entIDTranslate[20];
 
@@ -23,8 +25,9 @@ void ent_initEntList()
 {
     int initSize = ENT_INITSIZE;
     vecinit(GENERALZONE, entList.pos, entVec_t, initSize);
+    vecinit(GENERALZONE, entList.children, entityChildren_t, initSize);
     vecinit(GENERALZONE, entList.entBm, byte, initSize/8);
-    memset(entList.entBm.arr, 0, entList.entBm.capacity);
+    zmemset(entList.entBm.arr, 0, entList.entBm.capacity);
 
     for(int i = 0; i < 20; i++)
     {
@@ -32,20 +35,32 @@ void ent_initEntList()
     }
 }
 
-int ent_addEnt(vec3_t pos)
+int ent_addEnt(vec3_t pos, int childCount)
 {
-    int id = bm_findEmpty(entList.entBm.arr, entList.pos.size);
-    
+    int id;
+    entityChildren_t entChild;
     entVec_t entPos;
+
     vec3set(entPos.vec, pos);
+
+    if(childCount > 0) 
+        entChild.children = (int *) zidmalloc(GENERALZONE, sizeof(int) * childCount);
+    else
+        entChild.children = NULL;
+    entChild.count = childCount;
+    zmemset(entChild.children, 0, sizeof(int) * childCount);
+
+    id = bm_findEmpty(entList.entBm.arr, entList.pos.size);
     
     if(id < 0)
     {
         vecpush(entList.pos, entVec_t, entPos);
+        vecpush(entList.children, entityChildren_t, entChild);
         id = entList.pos.size - 1;
     }
     else {
         vecset(entList.pos, id, entPos);
+        vecset(entList.children, id, entChild);
     }
 
     if((entList.entBm.size*8) == entList.pos.size) {
@@ -53,6 +68,7 @@ int ent_addEnt(vec3_t pos)
     }
 
     bm_setBitVal(entList.entBm.arr, id, 1);
+
     
     return id;
 }
@@ -62,37 +78,86 @@ entVec_t *ent_getPos(int entID)
     return &vecget(entList.pos, entID);
 }
 
+entityChildren_t *ent_getChildren(int entID)
+{
+    return &vecget(entList.children, entID);
+}
+
+void ent_setChildID(int entID, int i, int id)
+{
+    vecget(entList.children, entID).children[i] = id;
+}
+
+int ent_getChildID(int entID, int i)
+{
+    return vecget(entList.children, entID).children[i];
+}
+
 void ent_removeEnt(int entID)
 {
+    entityChildren_t *entChildren;
+
     bm_setBitVal(entList.entBm.arr, entID, 0);
+    
+    entChildren = ent_getChildren(entID);
+    if(entChildren->children)
+    {
+        zidfree(entChildren->children);
+        entChildren->count = 0;
+    }
 }
 
 /********************MOVEMENT********************/
 
 void ent_initMoveList()
 {
-    int initSize = 16;
-    vecinit(GENERALZONE, entityMoveList.entID, int, initSize);
-    vecinit(GENERALZONE, entityMoveList.dir, entVec_t, initSize);
-    vecinit(GENERALZONE, entityMoveList.speed, float, 16);
+    int initSize = ENT_INITSIZE;
+    vecinit(GENERALZONE, entMoveList.entMove, entityMove_t, initSize);
+    vecinit(GENERALZONE, entMoveList.entBm, byte, initSize/8);
+    zmemset(entMoveList.entBm.arr, 0, initSize/8);
 }
 
-void ent_addMove(int entID, vec3_t dir, float speed)
+int ent_addMove(int entID, vec3_t pos, vec3_t dir, rect2_t rect, float speed)
 {
-    vecpush(entityMoveList.entID, int, entID);
+    entityMove_t entMove;
 
-    vecpushempty(entityMoveList.dir, entVec_t);
-    int id = entityMoveList.dir.size - 1;
-    vec3set(vecget(entityMoveList.dir, id).vec, dir);
+    vec3set(entMove.pos, pos);
+    vec3set(entMove.dir, dir);
+    rect2set(entMove.rect, rect);
+    entMove.speed = speed;
 
-    vecpush(entityMoveList.speed, float, speed);
+    int id = bm_findEmpty(entMoveList.entBm.arr, vecsize(entMoveList.entMove));
+    if(id < 0)
+    {
+        id = vecsize(entMoveList.entMove);
+        vecpush(entMoveList.entMove, entityMove_t, entMove);
+    }
+    else {
+        vecset(entMoveList.entMove, id, entMove);
+    }
+
+    bm_setBitVal(entMoveList.entBm.arr, id, 1);
+
+    physics_addBody(&vecget(entMoveList.entMove, id));
+
+    return id;
+}
+
+entityMove_t *ent_getMove(int moveID)
+{
+    return &vecget(entMoveList.entMove, moveID);
+}
+
+void ent_runMove()
+{
+    physics_run();
 }
 
 void ent_resetMove()
 {
-    vecreset(entityMoveList.entID);
-    vecreset(entityMoveList.dir);
-    vecreset(entityMoveList.speed);
+    // vecreset(entityMoveList.entID);
+    // vecreset(entityMoveList.dir);
+    // vecreset(entityMoveList.speed);
 }
 
 /********************RUN FUNCTION********************/
@@ -105,14 +170,16 @@ void ent_initThinkList()
     memset(entThinkList.entBm.arr, 0, initSize/8);
 }
 
-void ent_addThink(int entID, inputCommandList_t *inputCommandList, void (*think)(entityThink_t *entThink))
+int ent_addThink(int entID, inputCommandList_t *inputCommandList, void (*think)(entityThink_t *entThink))
 {
-    int id = bm_findEmpty(entThinkList.entBm.arr, entThinkList.entThink.size);
+    int id;
 
     entityThink_t entThink;
     entThink.entID = entID;
     entThink.think = think;
     entThink.inputCommandList = inputCommandList;
+
+    id = bm_findEmpty(entThinkList.entBm.arr, entThinkList.entThink.size);
 
     if(id < 0)
     {
@@ -129,6 +196,7 @@ void ent_addThink(int entID, inputCommandList_t *inputCommandList, void (*think)
 
     bm_setBitVal(entThinkList.entBm.arr, id, 1);
 
+    return id;
 }
 
 entityThink_t *ent_getThinkFromEntID(int entID)
@@ -211,6 +279,11 @@ int ent_addSerialize(int entID, int stateSize,
     bm_setBitVal(entSerializeList.entBm.arr, id, 1);
 
     return id;
+}
+
+entitySerialize_t *ent_getSerialize(int serializeID)
+{
+    return &vecget(entSerializeList.entSerialize, serializeID);
 }
 
 entitySerialize_t *ent_getSerializeFromEntID(int entID)
@@ -417,7 +490,6 @@ void ent_addPermanent(int entID, netcon_t *con, cl_entStateRecordList_t *entStat
 
 void sprite_init()
 {
-    printf("sprite init\n");
     spriteNameMap = s2imap_create(PERMANENTZONE);
     animSpriteNameMap = s2imap_create(PERMANENTZONE);
 }
@@ -437,56 +509,119 @@ void sprite_add(char *spriteName, int id, int type)
 
 int sprite_getID(char *spriteName, int type)
 {
-    int isServer = cvar_getInt("isServer");
-    if(isServer)
-        return 0;
-
     if(type == SPRITE_TYPE_ANIM)
         return s2imap_get(animSpriteNameMap, spriteName);
 
     return s2imap_get(spriteNameMap, spriteName);
 }
 
-
 void ent_initSpriteList()
 {
     vecinit(GENERALZONE, entSpriteList.entSprite, entitySprite_t, ENT_INITSIZE);
+    vecinit(GENERALZONE, entSpriteList.entBm, byte, ENT_INITSIZE/8);
+    zmemset(entSpriteList.entBm.arr, 0, ENT_INITSIZE/8);
+    entSpriteList.renderSpriteList = NULL;
+    entSpriteList.renderSpriteCount = 0;
+
     vecinit(GENERALZONE, animSpriteList.animSprite, animatedSprite_t, ENT_INITSIZE);
+    vecinit(GENERALZONE, animSpriteList.entBm, byte, ENT_INITSIZE/8);
+    zmemset(animSpriteList.entBm.arr, 0, ENT_INITSIZE/8);
+    animSpriteList.renderSpriteList = NULL;
+    animSpriteList.renderSpriteCount = 0;
+
+
 }
 
-void ent_addSprite(int entID, char *spriteName, int type, float pos[2], float rect[4], float angle, void (*render)(entitySprite_t *sprite))
+int ent_addSprite(int entID, char *spriteName, float pos[2], float rect[4], float angle)
 {
     entitySprite_t entSprite;
     animatedSprite_t animSprite;
 
     entSprite.entID = entID;
-    entSprite.texID = sprite_getID(spriteName, type);
+    entSprite.texID = s2imap_get(spriteNameMap, spriteName);
     zmemcpy(entSprite.pos, pos, sizeof(float) * 2);
     zmemcpy(entSprite.rect, rect, sizeof(float) * 4);
     entSprite.angle = angle;
-    entSprite.type = type;
-    entSprite.render = render;
 
-    printf("ent add sprite %d\n", entSprite.texID);
-
-    vecpush(entSpriteList.entSprite, entitySprite_t, entSprite);
-
-    if(type == SPRITE_TYPE_ANIM)
+    int id = bm_findEmpty(entSpriteList.entBm.arr, entSpriteList.entSprite.size);
+    if(id < 0)
     {
-        animSprite.spriteID = vecsize(entSpriteList.entSprite);
-        animSprite.speed = 0.1f;
-        animSprite.curSprite = 0;
-        animSprite.isRunning = 1;
-
-        entSprite.animID = vecsize(animSpriteList.animSprite);
-
-        vecpush(animSpriteList.animSprite, animatedSprite_t, animSprite);
+        id = vecsize(entSpriteList.entSprite);
+        vecpush(entSpriteList.entSprite, entitySprite_t, entSprite);
     }
+    else {
+        vecset(entSpriteList.entSprite, id, entSprite);
+    }
+
+    bm_setBitVal(entSpriteList.entBm.arr, id, 1);
+
+    return id;
 }
 
-entitySprite_t *ent_getSpriteFromSpriteID(int spriteID)
+entitySprite_t *ent_getSpriteFromEnt(int entID)
+{
+    entitySprite_t *entSprite;
+    
+    for(int i = 0; i < vecsize(entSpriteList.entSprite); i++)
+    {
+        entSprite = &vecget(entSpriteList.entSprite, i);
+        if(entSprite->entID == entID)
+            return entSprite;
+    }
+
+    return NULL;
+}
+
+entitySprite_t *ent_getSprite(int spriteID)
 {
     return &vecget(entSpriteList.entSprite, spriteID);
+}
+
+int ent_addAnimSprite(int entID, char *spriteName, float pos[2], float rect[4], float angle)
+{
+    animatedSprite_t animSprite;
+
+    animSprite.entID = entID;
+    animSprite.texID = s2imap_get(animSpriteNameMap, spriteName);
+    zmemcpy(animSprite.pos, pos, sizeof(float) * 2);
+    zmemcpy(animSprite.rect, rect, sizeof(float) * 4);
+    animSprite.angle = angle;
+
+    int id = bm_findEmpty(animSpriteList.entBm.arr, vecsize(animSpriteList.animSprite));
+
+    if(id < 0)
+    {
+        id = vecsize(animSpriteList.animSprite);
+        vecpush(animSpriteList.animSprite, animatedSprite_t, animSprite);
+    }
+    else {
+        vecset(animSpriteList.animSprite, id, animSprite);
+    }
+
+    bm_setBitVal(animSpriteList.entBm.arr, id, 1);
+
+    vecpush(animSpriteList.animSprite, animatedSprite_t, animSprite);
+
+    return id;
+}
+
+animatedSprite_t *ent_getAnimSprite(int spriteID)
+{
+    return &vecget(animSpriteList.animSprite, spriteID);
+}
+
+animatedSprite_t *ent_getAnimSpriteFromEnt(int entID)
+{
+    animatedSprite_t *animSprite;
+    
+    for(int i = 0; i < vecsize(animSpriteList.animSprite); i++)
+    {
+        animSprite = &vecget(animSpriteList.animSprite, i);
+        if(animSprite->entID == entID)
+            return animSprite;
+    }
+
+    return NULL;
 }
 
 void ent_setAllSpritePos()
@@ -496,29 +631,121 @@ void ent_setAllSpritePos()
 
     for(int i = 0; i < vecsize(entSpriteList.entSprite); i++)
     {
+        if(!bm_getBitVal(entSpriteList.entBm.arr, i))
+            continue;
+    
         entSprite = &vecget(entSpriteList.entSprite, i);
 
-        // entVec = ent_getPos(entSprite->entID);
-        // vec3set(entSprite->pos, entVec->vec);
-        entSprite->render(entSprite);
+        entVec = ent_getPos(entSprite->entID);
     }
 }
 
-animatedSprite_t *ent_getAnimSprite(int animID)
+void sprite_addSpriteToRender()
 {
-    return &vecget(animSpriteList.animSprite, animID);
+    int k = 0;
+    entitySprite_t *entSprite;
+    rect2_t spriteRect;
+
+    if(entSpriteList.renderSpriteList != NULL)
+    {
+        zidfree(entSpriteList.renderSpriteList);
+        entSpriteList.renderSpriteList = NULL;
+        entSpriteList.renderSpriteCount = 0;
+    }
+
+    for(int i = 0; i < vecsize(entSpriteList.entSprite); i++)
+    {
+        if(!bm_getBitVal(entSpriteList.entBm.arr, i))
+            continue;
+        
+        entSprite = &vecget(entSpriteList.entSprite, i);
+
+        rect2set(spriteRect, entSprite->rect);
+        vec2add(spriteRect, spriteRect, entSprite->pos);
+
+
+        if(!checkRectIntersect(spriteRect, worldCamera.window))
+            continue;
+
+        k++;
+    }
+
+    if(k == 0)
+        return;
+
+    entSpriteList.renderSpriteList = (entitySprite_t *) zidmalloc(TEMPORARYZONE, sizeof(entitySprite_t) * k);
+    entSpriteList.renderSpriteCount = k;
+
+    k=0;
+    for(int i = 0; i < vecsize(entSpriteList.entSprite); i++)
+    {
+        if(!bm_getBitVal(entSpriteList.entBm.arr, i))
+            continue;
+
+        entSprite = &vecget(entSpriteList.entSprite, i);
+
+        rect2set(spriteRect, entSprite->rect);
+        vec2add(spriteRect, spriteRect, entSprite->pos);
+
+        if(!checkRectIntersect(spriteRect, worldCamera.window))
+            continue;
+    
+        zmemcpy(&entSpriteList.renderSpriteList[k], &vecget(entSpriteList.entSprite, i), sizeof(entitySprite_t));
+        k++;
+    }
 }
 
-void ent_runAnimSprite()
+void sprite_addAnimToRender()
 {
+    int k = 0;
     animatedSprite_t *animSprite;
+    rect2_t spriteRect;
+
+    if(animSpriteList.renderSpriteList != NULL)
+    {
+        zidfree(animSpriteList.renderSpriteList);
+        animSpriteList.renderSpriteList = NULL;
+        animSpriteList.renderSpriteCount = 0;
+    }
+
     for(int i = 0; i < vecsize(animSpriteList.animSprite); i++)
     {
+        if(!bm_getBitVal(animSpriteList.entBm.arr, i))
+            continue;
+
         animSprite = &vecget(animSpriteList.animSprite, i);
         
-        animSprite->curSprite += animSprite->speed * animSprite->isRunning;
+        rect2set(spriteRect, animSprite->rect);
+        vec2add(spriteRect, spriteRect, animSprite->pos);
 
-        animSprite->curSprite = FRACT(animSprite->curSprite);
+        if(!checkRectIntersect(spriteRect, worldCamera.window))
+            continue;
+
+        k++;
+    }
+
+    if(k == 0)
+        return;
+
+    animSpriteList.renderSpriteList = (animatedSprite_t *) zidmalloc(TEMPORARYZONE, sizeof(animatedSprite_t) * k);
+    animSpriteList.renderSpriteCount = k;
+
+    k=0;
+    for(int i = 0; i < vecsize(animSpriteList.animSprite); i++)
+    {
+        if(!bm_getBitVal(animSpriteList.entBm.arr, i))
+            continue;
+
+        animSprite = &vecget(animSpriteList.animSprite, i);
+
+        rect2set(spriteRect, animSprite->rect);
+        vec2add(spriteRect, spriteRect, animSprite->pos);        
+        
+        if(!checkRectIntersect(spriteRect, worldCamera.window))
+            continue;
+    
+        zmemcpy(&animSpriteList.renderSpriteList[k], &vecget(animSpriteList.animSprite, i), sizeof(animatedSprite_t));
+        k++;
     }
 }
 
@@ -526,7 +753,9 @@ void ent_handleSprites()
 {
     ent_setAllSpritePos();
 
-    ent_runAnimSprite();
+    sprite_addSpriteToRender();
+
+    sprite_addAnimToRender();
 }
 
 
@@ -549,4 +778,5 @@ void ent_init()
     ent_initThinkList();
     ent_initSerializeList();
     ent_initSpriteList();
+    ent_initMoveList();
 }

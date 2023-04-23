@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include "../lib/cJSON/cJSON.h"
+#include "basic.h"
 
 char *getFileString(const char *filename, int zoneid)
 {
@@ -37,4 +39,31 @@ char *getFileString(const char *filename, int zoneid)
     fclose(fileptr);
 
     return fstring;
+}
+
+/********************LOADER********************/
+
+char *levelFileString;
+cJSON *levelJSON;
+
+void openLevelFile()
+{
+    levelFileString = getFileString("levels//config//sprite.json", TEMPORARYZONE);
+    levelJSON = cJSON_Parse(levelFileString);
+}
+
+char *getLevelFileString()
+{
+    return levelFileString;
+}
+
+cJSON *getLevelJSON()
+{
+    return levelJSON;
+}
+
+void closeLevelFile()
+{
+    cJSON_free(levelJSON);
+    zidfree(levelFileString);
 }

@@ -356,6 +356,8 @@ void serv_runCmd()
     float speed = 0.75;
     int inpLen;
 
+    ent_runMove();
+    
     ent_runAllThink();
 
     for(int i = 0; i < server.clRepList.size; i++)

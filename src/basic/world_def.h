@@ -3,22 +3,23 @@
 #include <math.h>
 #include "basic.h"
 
-// typedef struct vector2d_st
-// {
-//     float x, y;
-// } vector2d_t;
-
-// typedef struct rectangle_st
-// {
-//     float x, y, w, h;
-// } rectangle_t;
 
 typedef float vec_t;
+typedef vec_t vec2_t[2];
 typedef vec_t vec3_t[3];
 typedef vec_t vec4_t[4];
+typedef vec_t lineseg_t[4];
 
 #define rad2deg(radians) ((radians) * (180.0 / M_PI))
 #define deg2rad(deg) ((deg) * (M_PI/180.0))
+
+#define vec2set(v1, v2) {(v1)[0] = (v2)[0]; (v1)[1] = (v2)[1];}
+#define vec2xy(v, x, y) {(v)[0] = (x); (v)[1] = (y);}
+#define vec2dot(v1, v2) ((v1)[0]*(v2)[0] + (v1)[1]*(v2)[1])
+#define vec2squared(v) vec2dot(v, v)
+#define vec2length(v) sqrt(vec2dot(v, v))
+#define vec2add(v3, v1, v2) {(v3)[0] = (v1)[0]+(v2)[0]; (v3)[1] = (v1)[1]+(v2)[1];}
+#define vec2sub(v3, v1, v2) {(v3)[0] = (v1)[0]-(v2)[0]; (v3)[1] = (v1)[1]-(v2)[1];}
 
 #define vec3set(v1, v2) {(v1)[0] = (v2)[0]; (v1)[1] = (v2)[1]; (v1)[2] = (v2)[2];}
 #define vec3xyz(v, x, y, z) {(v)[0] = (x); (v)[1] = (y); (v)[2] = (z);}

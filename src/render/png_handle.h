@@ -1,4 +1,6 @@
-#include "../lib/libpng/png.h"
+// #include "../lib/libpng/png.h"
+// #include <png.h>
+#include "lpng1639/png.h";
 
 static png_voidp genmalloc_fn(png_structp png_ptr, png_alloc_size_t size)
 {
@@ -31,10 +33,10 @@ int readPNG(const char *loadfile, textureImage_t *texImg ) {
         return 1;
     }
 
-    png_voidp error_ptr;
-    png_error_ptr errfn;
-    png_error_ptr warnfn;
-    png_voidp mem_ptr;
+    png_voidp error_ptr = NULL;
+    png_error_ptr errfn = NULL;
+    png_error_ptr warnfn = NULL;
+    png_voidp mem_ptr = NULL;
 
     png_structp png_ptr = png_create_read_struct_2(PNG_LIBPNG_VER_STRING,
     error_ptr,

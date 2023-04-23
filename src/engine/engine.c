@@ -2,12 +2,18 @@
 #include "../basic/world_def.h"
 #include "engine.h"
 #include "entity.h"
+#include "../movement/movement.h"
 
 camera_t worldCamera;
 
 byte keyMap[256];
 
 struct inputCmdConfig_st inpCmdConfig;
+
+#define ENTCHILD_SIZE 3
+#define ENTCHILD_SERIALIZE 0
+#define ENTCHILD_SPRITE 1
+#define ENTCHILD_MOVE 2
 
 void inpConfig_storeUsedKeys(char *usedKeys, int usedKeyLen)
 {
@@ -158,19 +164,25 @@ void inpCmd_clear(inputCommandList_t *inpCmdList)
 
 void think(entityThink_t *entThink)
 {
+    int entID;
     inputCommand_t *inpCmd;
-    float speed = 0.75;
     int inpLen;
     entitySerialize_t *entSerialize;
     inputCommandList_t *inputCommandList;
-    entitySprite_t *entSprite;
+    animatedSprite_t *entSprite;
+    entVec_t *entPos;
+    entityMove_t *entMove;
 
-    entVec_t *entVec = ent_getPos(entThink->entID);
-    entSerialize = ent_getSerializeFromEntID(entThink->entID);
+    entID = entThink->entID;
+    entPos = ent_getPos(entID);
+    entSerialize = ent_getSerialize(ent_getChildID(entID, ENTCHILD_SERIALIZE));
+    entMove = ent_getMove(ent_getChildID(entID, ENTCHILD_MOVE));
 
     inputCommandList = entThink->inputCommandList;
-
     inpLen = inpCmd_getLen(inputCommandList);
+
+    vec3xyz(entMove->dir, 0, 0, 0);
+    entMove->speed = 0;
 
     for(int i = 0; i < inpLen; i++)
     {
@@ -181,48 +193,34 @@ void think(entityThink_t *entThink)
         byte left = bm_getBitVal(inpCmd->key, 2);
         byte right = bm_getBitVal(inpCmd->key, 3);
 
-        if(up) {
-            entVec->vec[1] += speed;
-            bm_setBitVal(entSerialize->stateFlags, 0, 1);
-            // printf("pressed up\n");
-        }
-        if(down) {
-            entVec->vec[1] -= speed;
-            bm_setBitVal(entSerialize->stateFlags, 0, 1);
-            // printf("pressed down\n");
-        }
-        if(left) {
-            entVec->vec[0] -= speed;
-            bm_setBitVal(entSerialize->stateFlags, 1, 1);
-            // printf("pressed left\n");
-        }
-        if(right) {
-            entVec->vec[0] += speed;
-            bm_setBitVal(entSerialize->stateFlags, 1, 1);
-            // printf("pressed right\n");
-        }
+        vec3xyz(entMove->dir,
+            right - left
+            ,up - down
+            ,0);
+
+        bm_setBitVal(entSerialize->stateFlags, 0,
+            bm_getBitVal(entSerialize->stateFlags, 0) | ABS(up - down));
+        bm_setBitVal(entSerialize->stateFlags, 1,
+            bm_getBitVal(entSerialize->stateFlags, 1) | ABS(right - left));
+        
+        entMove->speed += 40;
     }
 
-    // animatedSprite_t *animSprite = ent_getAnimSprite(entSprite->animID);
-    // animSprite->isRunning = 1;
-    // printf("entSprite pos %f %f\n", entSprite->pos[0], entSprite->pos[1]);
-}
+    // if(entMove->dir[0] > 0)
+    //     printf("think dir (%f, %f), speed %f\n", entMove->dir[0], entMove->dir[1], entMove->speed);
 
-void renderEnt(entitySprite_t *entSprite)
-{
-    entVec_t *entVec = ent_getPos(entSprite->entID);
+    entSprite = ent_getAnimSprite(ent_getChildID(entID, ENTCHILD_SPRITE));
 
-    animatedSprite_t *animSprite = ent_getAnimSprite(entSprite->animID);
-
-    if(vec3dist(entSprite->pos, entVec->vec) > 0.1f)
+    if(vec3dist(entSprite->pos, entMove->pos) > 0.1f)
     {
-        animSprite->isRunning = 1;
+        entSprite->curSprite += 0.01f;
+        entSprite->curSprite = FRACT(entSprite->curSprite);
     }
     else {
-        animSprite->isRunning = 0;
+        entSprite->curSprite = 0;
     }
 
-    vec3set(entSprite->pos, entVec->vec);
+    vec3set(entPos->vec,  entMove->pos);
 }
 
 void writeEnt(entitySerialize_t *entSerialize, bitstream_t *bs, byte *bm)
@@ -259,6 +257,8 @@ void readEnt(entitySerialize_t *entSerialize, bitstream_t *bs, byte *bm)
 
     entVec_t *entVec = ent_getPos(entSerialize->entID);
 
+    animatedSprite_t *entSprite = ent_getAnimSprite(entSerialize->entID);
+
     for(int i = 0; i < 2; i++)
     {
         if(bm_getBitVal(bm, i))
@@ -269,16 +269,17 @@ void readEnt(entitySerialize_t *entSerialize, bitstream_t *bs, byte *bm)
                     printf("pressed yval\n");
                     yval = stream_readInt(bs);
                     entVec->vec[1] = ((float)yval)/100.0;
+                    entSprite->pos[1] = entVec->vec[1];
                     break;
                 case 1:
                     printf("pressed xval\n");
                     xval = stream_readInt(bs);
                     entVec->vec[0] = ((float)xval)/100.0;
+                    entSprite->pos[0] = entVec->vec[0];
                     break;
             }
         }
     }
-
     printf("client received val x=%f, y=%f\n", entVec->vec[0] , entVec->vec[1] );
 }
 
@@ -286,16 +287,32 @@ int add_testEnt(void *data)
 {
     vec3_t vec;
     int entID;
+    int thinkID;
+    int serializeID;
+    int spriteID;
+    int moveID;
+    vec3_t dist;
+    float pos[2] = {50.0f, 10.0f};
+    // float rect[4] = {0.0f, 0.0f, 5.0f, 5.0f};
+    rect2_t rect;
 
     inputCommandList_t *inputCommandList = (inputCommandList_t *) data;
+    
+    printf("before adding entity\n");
+    vec3xyz(vec, 250, 270, 0);
+    rect2xywh(rect, -5, -5, 10, 10);
 
-    vec3xyz(vec, 0, 0, 0);
-    entID = ent_addEnt(vec);
-    ent_addThink(entID, inputCommandList, think);
-    ent_addSerialize(entID, 2, readEnt, writeEnt);
-    float pos[2] = {50.0f, 10.0f};
-    float rect[4] = {0.0f, 0.0f, 5.0f, 5.0f};
-    ent_addSprite(entID, "actor_torso_attack_machgun", SPRITE_TYPE_ANIM, pos, rect, 0, renderEnt);
+    entID = ent_addEnt(vec, ENTCHILD_SIZE);
+    thinkID = ent_addThink(entID, inputCommandList, think);
+    serializeID = ent_addSerialize(entID, 2, readEnt, writeEnt);
+    spriteID = ent_addAnimSprite(entID, "actor_torso_attack_machgun", pos, rect, 0);
+    moveID = ent_addMove(entID, vec, dist, rect, 0);
+
+    ent_setChildID(entID, ENTCHILD_SERIALIZE, serializeID);
+    ent_setChildID(entID, ENTCHILD_SPRITE, spriteID);
+    ent_setChildID(entID, ENTCHILD_MOVE, moveID);
+    printf("after adding entity\n");
+
     return entID;
 }
 
@@ -314,6 +331,9 @@ void eng_init()
         cl_init();
     }
 
+    // world_load();
+    physics_init();
+
     char keys[] = {'w', 's', 'a', 'd'};
 
     inpConfig_storeUsedKeys(keys, sizeof(keys));
@@ -321,12 +341,15 @@ void eng_init()
     ent_init();
 
     ent_addCreator(add_testEnt);
+    
 }
 
 void eng_handleEvents()
 {
     sysEvent_t *ev;
     cvar_t *cv_isServer;
+    byte *buf;
+    int len;
 
     int isServer = cvar_getInt("isServer");
 
@@ -346,9 +369,8 @@ void eng_handleEvents()
                 }
                 break;
             case SYSEVENT_PACKET:
-                // printf("got packet \n");
-                byte *buf = (byte *) ev->ptr;
-                int len = ev->value;
+                buf = (byte *) ev->ptr;
+                len = ev->value;
                 netaddr_t *fromAddr = (netaddr_t *) buf;
                 buf += sizeof(netaddr_t);
                 len -= sizeof(netaddr_t);
