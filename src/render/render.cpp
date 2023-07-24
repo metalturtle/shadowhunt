@@ -1,12 +1,12 @@
 #include "../basic/world_def.h"
 #include "cJSON/cJSON.h"
 #include "render.h"
-#include "png_handle.h"
 #include "glad/glad.c"
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtc/type_ptr.hpp"
 #include "../movement/movement.h"
+#include "png_handle.h"
 
 char infoLog[512];
 
@@ -534,7 +534,7 @@ void drawRect(int texregid)
     glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
 }
 
-void drawSprite(int spriteID, float x, float y, float w, float h)
+void drawSprite(int spriteID, float x, float y, float w, float h, float angle)
 {
     int shaderProgram = vecget(GraphicsHandle.shaderProgramList, 0);
     int VAO = SpriteHandle.spriteVAO;
@@ -550,8 +550,8 @@ void drawSprite(int spriteID, float x, float y, float w, float h)
     glm::mat4 trans = glm::mat4(1.0f);
     trans = glm::ortho(0.0f, swidth / cellsize, 0.0f, sheight / cellsize, -10.0f, 100.0f);
     trans = glm::translate(trans, glm::vec3(-camera.window[0] + x, -camera.window[1] + y, 0.0f));
+    trans = glm::rotate(trans, angle, glm::vec3(0.0f, 0.0f, 1.0f));
     trans = glm::scale(trans, glm::vec3(w, h, 1.0f));
-    trans = glm::rotate(trans, 0.0f, glm::vec3(0.0f, 0.0f, 1.0f));
 
     glUseProgram(shaderProgram);
 
@@ -629,12 +629,15 @@ int render()
         }
     }
 
-    for(int i = 0; i < entSpriteList.renderSpriteCount; i++)
+    for(int i = 0; i < vecsize(entSpriteList.renderList); i++)
     {
-        entSprite = &entSpriteList.renderSpriteList[i];
+        entSprite = &vecget(entSpriteList.renderList, i);
+
         drawSprite(entSprite->texID,
                 entSprite->pos[0], entSprite->pos[1],
-                entSprite->rect[2], entSprite->rect[3]);
+                entSprite->rect[2], entSprite->rect[3],
+                entSprite->angle
+                );
     }
     
     // shaderProgram = vecget(GraphicsHandle.shaderProgramList, 1);
@@ -645,13 +648,41 @@ int render()
     {
         rect2set(wall, world.worldWallArray[i].rect);
 
-        drawSprite(2, wall[0], wall[1], wall[2], wall[3]);
+        drawSprite(2, wall[0], wall[1], wall[2], wall[3], 0);
     }
 
-    for(int i = 0; i < animSpriteList.renderSpriteCount; i++)
+    for(int i = 0; i < vecsize(animSpriteList.renderList); i++)
     {
-        animSprite = &animSpriteList.renderSpriteList[i];
-        drawAnimSprite(animSprite);
+        animSprite = &vecget(animSpriteList.renderList, i);
+        // drawAnimSprite(animSprite);
+        drawSprite(animSprite->texID,
+                animSprite->pos[0], animSprite->pos[1],
+                animSprite->rect[2], animSprite->rect[3],
+                animSprite->angle
+                );
+    }
+
+    
+    float dir[3];
+    float pos[3];
+    for(int i = 0; i < vecsize(renderRayList.xList); i++)
+    {
+        dir[0] = vecget(renderRayList.xDirList, i);
+        dir[1] = vecget(renderRayList.yDirList, i);
+        dir[2] = 0;
+        pos[0] = vecget(renderRayList.xList, i);
+        pos[1] = vecget(renderRayList.yList, i);
+        pos[2] = 0;
+
+        float angle = vec3getang2(dir);
+        float dist = vec3length(dir);
+
+
+        drawSprite(2,
+                pos[0], pos[1],
+                dist, 1,
+                angle
+                );
     }
 
     // runPhysics();

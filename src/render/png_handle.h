@@ -1,6 +1,6 @@
 // #include "../lib/libpng/png.h"
 // #include <png.h>
-#include "lpng1639/png.h";
+#include "lpng1639/png.h"
 
 static png_voidp genmalloc_fn(png_structp png_ptr, png_alloc_size_t size)
 {

@@ -176,6 +176,7 @@ void streamQuick_writePacket(quickStreamRecord_t *quickRecord, bitstream_t *bs, 
     // Write a bit indicating if there are records to send
     if(quickRecord->recordCount == 0)
     {
+        printf("returned bit zero record count \n");
         stream_writeBit(bs, 0);
         return;
     }
@@ -186,6 +187,7 @@ void streamQuick_writePacket(quickStreamRecord_t *quickRecord, bitstream_t *bs, 
 
     // Write the number of records that are sent
     stream_writeByte(bs, quickRecord->recordCount);
+    printf("sending record count %d \n", quickRecord->recordCount);
 
 
     // write the data from all the records into the stream
@@ -216,6 +218,20 @@ streamQuick_readPacket
 Sets the bitstream data directly into a record
 ===============
 */
+
+int streamQuick_readCount(quickStreamRecord_t *quickRecord, bitstream_t *bs)
+{
+    if(!stream_readBit(bs))
+    {
+        return 0;
+    }
+
+
+    // Read the number of records that are sent
+    return stream_readByte(bs);
+}
+
+
 void streamQuick_readPacket(quickStreamRecord_t *quickRecord, bitstream_t *bs)
 {
     byte isSent;
@@ -275,7 +291,7 @@ void streamQuick_acknowledge(quickStreamRecord_t *quickRecord, netcon_t *con)
         }
     }
 
-    printf("recv reqd data: lastrecvseq: %d \n", lastseq);
+    // printf("recv reqd data: lastrecvseq: %d \n", lastseq);
 
 
 
@@ -821,7 +837,8 @@ void streamRecent_init(
     recentStreamRecord_t *recentRecord,
     int stateSize,
     int (*readFunc)(bitstream_t *, byte *),
-    int (*writeFunc)(bitstream_t *, byte *)
+    int (*writeFunc)(bitstream_t *, byte *),
+    byte *stateChangeBm
     )
 {
     recentRecord->head = recentRecord->tail = NULL;
@@ -830,8 +847,7 @@ void streamRecent_init(
     recentRecord->readFunc = readFunc;
     recentRecord->writeFunc = writeFunc;
 
-    recentRecord->stateChangeBm = (byte *) zidmalloc(GENERALZONE, stateSize);
-    zmemset(recentRecord->stateChangeBm, 0, stateSize);
+    recentRecord->stateChangeBm = stateChangeBm;
 }
 
 
@@ -888,9 +904,9 @@ int streamRecent_writeStateBits(recentStreamRecord_t *recentRecord, bitstream_t 
     // Go through the record list and find the states that have not been recieved
     for(curData = recentRecord->head; curData != NULL; curData = curData->next)
     {
-        printf("curdata:%p, seq=%d, status=%d, bit:", curData, curData->sendSequence
-        ,netcon_getPacketState(con, curData->sendSequence)
-        ); printbit(curData->stateBm[0]); printf("\n");
+        // printf("curdata:%p, seq=%d, status=%d, bit:", curData, curData->sendSequence
+        // ,netcon_getPacketState(con, curData->sendSequence)
+        // ); printbit(curData->stateBm[0]); printf("\n");
 
         // If the packet carrying the record has been dropped
         if(netcon_getPacketState(con, curData->sendSequence) == NETCON_PACKET_DROPPED)
@@ -1048,7 +1064,6 @@ void streamRecent_readStateBits(int stateLen, bitstream_t *bs, byte *readStateBm
     {
         if((bit = stream_readBit(bs)) > 0)
         {
-            printf("found bit %d\n", i);
             bm_setBitVal(readStateBm, i, bit);
         }
     }
@@ -1080,7 +1095,6 @@ void streamRecent_readPacket(recentStreamRecord_t *recentRecord, bitstream_t *bs
     {
         if((bit = stream_readBit(bs)) > 0)
         {
-            printf("found bit %d\n", i);
             bm_setBitVal(stateBm, i, bit);
         }
     }
@@ -1231,4 +1245,24 @@ Set the state flags in the record
 void streamRecent_setState(recentStreamRecord_t *recentRecord, int i, byte flag)
 {
     bm_setBitVal(recentRecord->stateChangeBm, i, flag);
+}
+
+
+/*
+===============
+streamRecent_setState
+
+
+Set the state flags in the record
+===============
+*/
+void streamRecent_setStateBits(recentStreamRecord_t *recentRecord, byte *stateBm)
+{
+    for(int i = 0; i < recentRecord->stateBitLen; i++)
+    {
+        if(bm_getBitVal(stateBm, i))
+        {
+            bm_setBitVal(recentRecord->stateChangeBm, i, 1);
+        }
+    }
 }

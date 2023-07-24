@@ -83,6 +83,8 @@ extern void streamQuick_writePacket(quickStreamRecord_t *quickRecord, bitstream_
 extern void streamQuick_readPacket(quickStreamRecord_t *quickRecord, bitstream_t *bs);
 extern void streamQuick_acknowledge(quickStreamRecord_t *quickRecord, netcon_t *con);
 extern void streamQuick_addPayload(quickStreamRecord_t *quickRecord, void *data);
+extern int streamQuick_readCount(quickStreamRecord_t *quickRecord, bitstream_t *bs);
+
 
 extern void streamReliable_init(relStreamRecord_t *relRecord, int (*readFunc)(bitstream_t *), int (*writeFunc)(bitstream_t *));
 extern int streamReliable_callWriteFunc(relStreamRecord_t *relRecord, netcon_t *con);
@@ -90,13 +92,21 @@ extern void streamReliable_writePacket(relStreamRecord_t *relRecord ,bitstream_t
 extern void streamReliable_readPacket(relStreamRecord_t *relRecord, bitstream_t *bs);
 extern void streamReliable_acknowledge(relStreamRecord_t *relRecord, netcon_t *con);
 
-extern void streamRecent_init(recentStreamRecord_t *recentRecord, int stateSize, int (*readFunc)(bitstream_t *, byte *), int (*writeFunc)(bitstream_t *, byte *));
+// extern void streamRecent_init(recentStreamRecord_t *recentRecord, int stateSize, int (*readFunc)(bitstream_t *, byte *), int (*writeFunc)(bitstream_t *, byte *));
+extern void streamRecent_init(
+    recentStreamRecord_t *recentRecord,
+    int stateSize,
+    int (*readFunc)(bitstream_t *, byte *),
+    int (*writeFunc)(bitstream_t *, byte *),
+    byte *stateChangeBm
+    );
 extern void streamRecent_writePacket(recentStreamRecord_t *recentRecord, bitstream_t *bs, netcon_t *con);
 extern void streamRecent_readPacket(recentStreamRecord_t *recentRecord, bitstream_t *bs);
 extern void streamRecent_acknowledge(recentStreamRecord_t *recentRecord, netcon_t *con);
 extern void streamRecent_setState(recentStreamRecord_t *recentRecord, int i, byte flag);
 extern int streamRecent_writeStateBits(recentStreamRecord_t *recentRecord, bitstream_t *bs, netcon_t *con, byte *stateBm);
 extern void streamRecent_readStateBits(int stateLen, bitstream_t *bs, byte *stateBm);
+extern void streamRecent_setStateBits(recentStreamRecord_t *recentRecord, byte *stateBm);
 
 /********************ENTITY********************/
 
@@ -126,6 +136,10 @@ struct inputCmdConfig_st
     char keysPressed[256];
     int pressedLen;
 
+
+    float mouseX;
+    float mouseY;
+
 };
 
 typedef struct inputCommand_st
@@ -135,8 +149,14 @@ typedef struct inputCommand_st
     int sequence;
     int recordID;
     short timeTaken;
+    float inpX;
+    float inpY;
+    float mouseX;
+    float mouseY;
 
 } inputCommand_t;
+
+extern float P_X,P_Y;
 
 typedef struct inputCommandList_st
 {
@@ -152,6 +172,7 @@ extern struct inputCmdConfig_st inpCmdConfig;
 extern void inpConfig_storeUsedKeys(char *usedKeys, int usedKeyLen);
 extern void inpCmd_init(inputCommandList_t *inpCmdList);
 extern void inpCmd_clearPressed();
+extern void inpCmd_moveMouse(float x, float y);
 extern void inpCmd_pressKey(char key);
 extern qbool inpCmd_isEmpty(inputCommandList_t *inpCmdList);
 extern int inpCmd_getLen(inputCommandList_t *inpCmdList);
@@ -163,6 +184,7 @@ extern inputCommand_t *inpCmd_add(inputCommandList_t *inpCmdList, int sequence);
 extern void inpCmd_removeFirst(inputCommandList_t *inpCmd);
 extern inputCommand_t *inpCmd_get(inputCommandList_t *inpCmd, int i);
 extern void inpCmd_clear(inputCommandList_t *inpCmdList);
+extern void inpCmd_free(inputCommandList_t *inpCmdList);
 
 
 /********************SERVER********************/
@@ -183,6 +205,7 @@ typedef enum
     SERVCMD_STR,
     SERVCMD_SYS,
     SERVCMD_ENT,
+    SERVCMD_INPUTACK,
     SERVCMD_END
 } sv_netcmd_e;
 
@@ -191,6 +214,7 @@ typedef enum
     CLCMD_NULL,
     CLCMD_SYS,
     CLCMD_INPUT,
+    CLCMD_ENTACK,
     CLCMD_END
 } cl_netcmd_e;
 
@@ -234,10 +258,17 @@ typedef struct serv_clrep_st
 
     cl_entStateRecordList_t entStateRecordList;
 
-    inputCommandList_t *inputCommandList;
+    // inputCommandList_t *inputCommandList;
 
 } serv_clrep_t;
 
+
+typedef struct cl_inputList_st
+{
+    vector(inputCommandList_t) list;
+    vector(byte) bitmap;
+
+} cl_inputList_t;
 
 typedef struct server_st
 {
@@ -255,6 +286,7 @@ typedef struct server_st
 extern void serv_init();
 extern void serv_frame();
 extern void serv_packetEvent(netaddr_t *fromAddress, byte *data, int len);
+extern void serv_addSyncedEnt(int, int);
 
 /********************CLIENT********************/
 
@@ -285,10 +317,15 @@ extern void cl_init();
 extern void cl_frame();
 extern void cl_keyEvent(int key);
 extern void cl_packetEvent(netaddr_t *fromAddress, byte *data, int len);
+extern void cl_mouseEvent(float x, float y);
 
 extern server_t server;
 extern client_t client;
+extern cl_inputList_t cl_inputList;
 
 extern void world_load();
+
+extern void eng_processServerEntities();
+extern void eng_processClientEntities();
 
 #endif

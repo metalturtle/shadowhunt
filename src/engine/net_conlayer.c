@@ -24,14 +24,21 @@ void netcon_setup(netcon_t *con)
 
 netcon_packetstate_e netcon_getPacketState(netcon_t *con, int sequence)
 {
+
     return con->sentPacketStates[sequence & (SENDWINDOW_SIZE-1)];
 }
 
 qbool netcon_shouldSend(netcon_t *con)
 {
-    if(checkTimer(&sendTimer) && con->sendState == NETCON_READY)
-        return qtrue;
-    return qfalse;
+    if((con->outgoingSequence - con->windowStartSequence + 1) == SENDWINDOW_SIZE)
+    {
+        return qfalse;
+    }
+
+    return qtrue;
+    // if(checkTimer(&sendTimer) && con->sendState == NETCON_READY)
+    //     return qtrue;
+    // return qfalse;
 }
 
 int netcon_transmitFragment(netcon_t *con)
@@ -76,6 +83,7 @@ int netcon_transmit(netcon_t * con, int length, byte *data)
     int ret = 0;
     int headcurb;
     int payloadLen;
+    int currentOutgoingSequence;
     
     if(length > bstream.bufsize)
     {
@@ -83,9 +91,13 @@ int netcon_transmit(netcon_t * con, int length, byte *data)
         return -1;
     }
 
+
     stream_init(&bstream, bstream.buf, bstream.bufsize);
 
-    stream_writeInt(&bstream, con->outgoingSequence);
+    
+    currentOutgoingSequence = con->outgoingSequence;
+
+    stream_writeInt(&bstream, currentOutgoingSequence);
     stream_writeByte(&bstream, 0);
     stream_writeInt(&bstream, length);
     stream_writeInt(&bstream, con->incomingSequence);
@@ -94,6 +106,8 @@ int netcon_transmit(netcon_t * con, int length, byte *data)
     stream_writeData(&bstream, data, length);
 
     con->outgoingSequence++;
+    con->sentPacketStates[(con->outgoingSequence) & (SENDWINDOW_SIZE - 1)] = NETCON_PACKET_READY;
+
 
     ret = net_sendPacket(&con->remoteAddress, &bstream);
     payloadLen = ret - headcurb;
@@ -109,18 +123,14 @@ int netcon_transmit(netcon_t * con, int length, byte *data)
         zmemcpy(con->sendFragBuffer, data + payloadLen, length - payloadLen);
         con->sendFragLength = length - payloadLen;
         con->sendFullFragLength = length;
-        con->sendFragSequence = con->outgoingSequence - 1;
-        con->sentPacketStates[(con->outgoingSequence - 1) & (SENDWINDOW_SIZE - 1)] = NETCON_PACKET_FRAGMENTED;
+        con->sendFragSequence = currentOutgoingSequence;
+        con->sentPacketStates[(currentOutgoingSequence) & (SENDWINDOW_SIZE - 1)] = NETCON_PACKET_FRAGMENTED;
     }
     else
     {
-        con->sentPacketStates[(con->outgoingSequence - 1) & (SENDWINDOW_SIZE - 1)] = NETCON_PACKET_SENT;
+        con->sentPacketStates[(currentOutgoingSequence) & (SENDWINDOW_SIZE - 1)] = NETCON_PACKET_SENT;
     }
 
-    if((con->outgoingSequence - con->windowStartSequence) == SENDWINDOW_SIZE)
-    {
-        con->sendState = NETCON_SLIDWIND_FULL;
-    }
 
     startTimer(&sendTimer, duration);
     return 0;
@@ -193,6 +203,7 @@ int netcon_process(netcon_t *con, bitstream_t *bs)
     incomingSequence = stream_readInt(bs);
     isFragmented = stream_readByte(bs);
 
+
     // check if packet is fragmented
     if(isFragmented)
     {
@@ -209,6 +220,7 @@ int netcon_process(netcon_t *con, bitstream_t *bs)
 
             fullPayloadLen = stream_readInt(bs);
             ackSeq = stream_readInt(bs);
+
 
             con->lastAckSequence = ackSeq;
 
@@ -231,8 +243,11 @@ int netcon_process(netcon_t *con, bitstream_t *bs)
 
     if(ackSeq < con->windowStartSequence)
     {
+        printf("ack is too old \n");
         return -1;
     }
+
+    // printf("acked seq %d \n", ackSeq);
 
     for(int i = con->windowStartSequence; (i != ackSeq 
         && (i < (con->windowStartSequence + SENDWINDOW_SIZE))); i++)
@@ -242,6 +257,7 @@ int netcon_process(netcon_t *con, bitstream_t *bs)
 
     con->sentPacketStates[ackSeq & (SENDWINDOW_SIZE - 1)] = NETCON_PACKET_SUCCESS;
     con->windowStartSequence = ackSeq;
+
 
     return retval;
 }

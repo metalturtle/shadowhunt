@@ -6,6 +6,7 @@ static char writeBuffer[MAX_MSGLEN];
 
 /********************CLIENT FRAME RUN********************/
 
+
 void cl_addInputCmd()
 {
     if(client.clRep.clState != SYS_RUN)
@@ -13,7 +14,8 @@ void cl_addInputCmd()
 
     inputCommandList_t *inputCommandList;
 
-    inputCommandList = client.clRep.inputCommandList;
+    // inputCommandList = client.clRep.inputCommandList;
+    inputCommandList = &vecget(cl_inputList.list, 0);
 
     if(inpCmd_isFull(inputCommandList))
     {
@@ -26,14 +28,23 @@ void cl_addInputCmd()
     inputCommand_t *inpCmd = inpCmd_getLast(inputCommandList);
 }
 
+
 void cl_keyEvent(int key)
 {
     float x = 0, y = 0;
     float speed = 0.75f;
     bitstream_t bs;
 
+
     inpCmd_pressKey(key);
 }
+
+
+void cl_mouseEvent(float x, float y)
+{
+    inpCmd_moveMouse(x, y);
+}
+
 
 void cl_checkTimeout()
 {
@@ -54,16 +65,34 @@ void cl_processSysCmd(bitstream_t *readStream)
     {
         printf("client setting state to run\n");
         client.clRep.clState = SYS_RUN;
+        startTimer(&client.clRep.sendTimer, 100);
+
+        inputCommandList_t *inpCmdList = &vecget(cl_inputList.list, 0);
+        inpCmd_init(inpCmdList);
+
+        printf("setting sending timer \n");
     }
 }
+// void startTimer(endTimer_t *timer,unsigned int duration)
 
-void cl_ackInput()
+void cl_ackInput(bitstream_t *readStream)
 {
     int remLen = 0;
     int inpLen = 0;
     inputCommandList_t *inputCommandList;
+    inputCommand_t *inpCmd;
+    inputCommand_t *lastInp = NULL;
+    inputCommand_t *firstInp = NULL;
 
-    inputCommandList = client.clRep.inputCommandList;
+    // inputCommandList = client.clRep.inputCommandList;
+    inputCommandList = &vecget(cl_inputList.list, 0);
+
+    int ackRecordID = stream_readInt(readStream);
+
+
+    // if(ackRecordID <= inputCommandList->lastRecordID)
+    //     return;
+
 
     inpLen =  inpCmd_getLen(inputCommandList);
 
@@ -71,10 +100,36 @@ void cl_ackInput()
     {
         inputCommand_t *inpCmd = inpCmd_get(inputCommandList, i);
 
-        if(netcon_getPacketState(client.clRep.con, inpCmd->sequence) == NETCON_PACKET_SUCCESS)
+        if(inpCmd->recordID == ackRecordID)
         {
             remLen = i + 1;
+            lastInp = inpCmd;
+            break;
         }
+        // if(netcon_getPacketState(client.clRep.con, inpCmd->sequence) == NETCON_PACKET_SUCCESS)
+        // {
+        //     remLen = i + 1;
+        //     lastInp = inpCmd;
+        // }
+    }
+
+    // if(lastInp != NULL)
+    //     printf("acked input %d %d\n", lastInp->recordID, lastInp->sequence);
+
+    if(lastInp != NULL) {
+        // if(ABS(P_X - lastInp->inpX) > 0.1 || ABS(P_Y - lastInp->inpY) > 0.1 ) {
+        //     printf("acked input %d %d\n", lastInp->recordID, ackRecordID);
+        //     printf("mismatch of position %f,%f  %f,%f %p\n", P_X, P_Y, lastInp->inpX, lastInp->inpY, lastInp);
+        // }
+
+
+        if(lastInp->recordID > 10000)
+            com_error(ERR_FATAL, "error: incorect input recordID found\n");
+    }
+    else {
+        inpCmd = inpCmd_get(inputCommandList, 0);
+        // printf("couldn't find record ID %d %d %d\n", ackRecordID, inputCommandList->lastRecordID, inpCmd->recordID);
+        return;
     }
 
     for(int i = 0; i < remLen; i++)
@@ -83,22 +138,18 @@ void cl_ackInput()
     }
 }
 
+
 void cl_acknowledge()
 {
-    cl_ackInput();
+
 }
+
 
 void cl_readEntities(bitstream_t *readStream)
 {
-    ent_readSerialize(readStream, &client.clRep.entStateRecordList, client.clRep.inputCommandList);
-
-    entVec_t *vec = ent_getPos(0);
-
-    float diff[] = {-30, -30};
-    rect2xywh(worldCamera.window, diff[0], diff[1], getScreenWidth(), getScreenHeight());
-    vec2add(worldCamera.window, worldCamera.window, vec->vec);
-    
+    ent_readSerializerList(0, client.clRep.con, readStream);   
 }
+
 
 void cl_readServerCmd(bitstream_t *readStream)
 {
@@ -111,17 +162,21 @@ void cl_readServerCmd(bitstream_t *readStream)
     {
         if(cmd == SERVCMD_SYS)
         {
-            printf("processing syscmd\n");
             cl_processSysCmd(readStream);
         }
         else if(cmd == SERVCMD_ENT)
         {
             cl_readEntities(readStream);
         }
+        else if (cmd == SERVCMD_INPUTACK)
+        {
+            cl_ackInput(readStream);
+        }
         else {
             break;
         }
     }
+
 
     if(cmd != SERVCMD_END)
     {
@@ -132,6 +187,7 @@ void cl_readServerCmd(bitstream_t *readStream)
         com_error(ERR_FATAL, "error: last cmd is not equal to NETCMD_END\n");
     }
 }
+
 
 void cl_packetEvent(netaddr_t *fromAddress, byte *data, int len)
 {
@@ -154,18 +210,17 @@ void cl_packetEvent(netaddr_t *fromAddress, byte *data, int len)
 
         cl_readServerCmd(&readStream);
     }
-
 }
 
 /********************SEND PACKET********************/
 
+
 void cl_send(bitstream_t *writeStream)
 {
-    if(client.clRep.clState == SYS_IDLE)
-        return;
 
     if(writeStream->curbyte == 0)
         return;
+
 
     stream_writeByte(writeStream, CLCMD_END);
 
@@ -176,6 +231,7 @@ void cl_send(bitstream_t *writeStream)
         netcon_transmitFragment(client.clRep.con);
     }
 }
+
 
 void cl_writeSysCmd(bitstream_t *writeStream)
 {
@@ -212,7 +268,8 @@ void cl_writeInput(bitstream_t *writeStream)
     if(!checkTimer(&client.clRep.sendTimer))
         return;
 
-    inputCommandList = client.clRep.inputCommandList;
+    // inputCommandList = client.clRep.inputCommandList;
+    inputCommandList = &vecget(cl_inputList.list, 0);
 
     inpLen = inpCmd_getLen(inputCommandList);
 
@@ -225,15 +282,38 @@ void cl_writeInput(bitstream_t *writeStream)
 
     stream_writeInt(writeStream, inpCmd->recordID);
     stream_writeInt(writeStream, inpLen);
+    stream_writeInt(writeStream, inputCommandList->lastRecordID );
+
+    // printf("sending last record id %d \n", inputCommandList->lastRecordID);
+
 
     for(int i = 0; i < inpLen; i++)
     {
         inpCmd = inpCmd_get(inputCommandList, i);
         stream_writeBitsData(writeStream, inpCmd->key, inpCmdConfig.keyBitLen);
+
+        int mouseX = (inpCmd->mouseX * 1000);
+        int mouseY = (inpCmd->mouseY * 1000);
+
+        stream_writeInt(writeStream, mouseX);
+        stream_writeInt(writeStream, mouseY);
     }
 
-    startTimer(&client.clRep.sendTimer, 50);
 }
+
+
+void cl_writeEntityACK(bitstream_t *writeStream)
+{
+    if(!checkTimer(&client.clRep.sendTimer))
+        return;
+
+    if(client.clRep.clState != SYS_RUN)
+        return;
+
+
+    stream_writeByte(writeStream, CLCMD_ENTACK);
+}
+
 
 void cl_sendPacket()
 {
@@ -242,12 +322,22 @@ void cl_sendPacket()
     if(client.clRep.clState == SYS_IDLE) {
         client.clRep.clState = SYS_CONNECT;
     }
+    
+
+    if(!netcon_shouldSend(client.clRep.con)) {
+        printf("window limit \n");
+        return;
+    }
+
+
 
     stream_init(&writeStream, writeBuffer, MAX_MSGLEN);
 
     cl_writeSysCmd(&writeStream);
 
     cl_writeInput(&writeStream);
+
+    cl_writeEntityACK(&writeStream);
 
     cl_send(&writeStream);
 }
@@ -263,10 +353,10 @@ void cl_init()
     netcon_setup(client.clRep.con);
     netAddrSet(&client.clRep.con->remoteAddress, 127, 0, 0, 1, 8000);
 
-    ent_initRecordList(&client.clRep.entStateRecordList);
+    // ent_initRecordList(&client.clRep.entStateRecordList);
 
-    client.clRep.inputCommandList = (inputCommandList_t *) zidmalloc(GENERALZONE, sizeof(inputCommandList_t));
-    inpCmd_init(client.clRep.inputCommandList);
+    vecinit(GENERALZONE, cl_inputList.list, inputCommandList_t, 1);
+
 
     client.clRep.clState = SYS_IDLE;
 }
@@ -275,8 +365,16 @@ void cl_frame()
 {
     cl_addInputCmd();
 
+    eng_processClientEntities();
+
     // ent_setAllSpritePos();
-    ent_handleSprites();
+    // ent_handleSprites();
 
     cl_sendPacket();
+
+
+    if(checkTimer(&client.clRep.sendTimer))
+    {
+        startTimer(&client.clRep.sendTimer, 100);
+    }
 }

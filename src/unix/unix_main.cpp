@@ -15,6 +15,9 @@ static byte isServer;
 
 char recvBuffer[MAX_MSGLEN];
 
+int SCREEN_WIDTH;
+int SCREEN_HEIGHT;
+
 /********************EVENTS********************/
 
 #define MAXEVENTLIMIT 256
@@ -72,6 +75,30 @@ void addKeyEvents()
     }
 }
 
+void addMouseEvents()
+{
+    double d_xpos, d_ypos;
+    glfwGetCursorPos(window, &d_xpos, &d_ypos);
+
+
+    d_xpos = MAX(d_xpos, 0);
+    d_ypos = MAX(d_ypos, 0);
+
+    d_ypos = SCREEN_HEIGHT - d_ypos;
+
+    d_xpos = MIN(d_xpos, SCREEN_WIDTH);
+    d_ypos = MIN(d_ypos, SCREEN_HEIGHT);
+
+    d_xpos = d_xpos/SCREEN_WIDTH;
+    d_ypos = d_ypos/SCREEN_HEIGHT;
+
+    int i_xpos = (int)(d_xpos * 10000);
+    int i_ypos = (int)(d_ypos * 10000);
+
+    // printf("mouse x,y: %f, %f \n", d_xpos, d_ypos);
+    addSysEvent(SYSEVENT_MOUSE, i_xpos, i_ypos, NULL);
+}
+
 void fb_size_callback(GLFWwindow *window, int width, int height)
 {
     glViewport(0, 0, width, height);
@@ -110,7 +137,11 @@ void scanSysEvents()
     byte *buf;
     int len;
 
-    if(!isServer) addKeyEvents();
+    if(!isServer)
+    {
+        addMouseEvents();
+        addKeyEvents();
+    }
 
 
     stream_init(&recvbs, recvBuffer, MAX_MSGLEN);
@@ -130,7 +161,8 @@ void scanSysEvents()
 cvar_t *cv_isServer;
 int main(int argc, char **argv)
 {
-    int swidth = 600, sheight = 600;
+    SCREEN_WIDTH = 600;
+    SCREEN_HEIGHT = 600;
     createThreeZones(1024*1024, 1024*1024*20, 1024*1024);
 
     cvar_init();
@@ -167,8 +199,8 @@ int main(int argc, char **argv)
     eng_init();
 
     if(!cv_isServer->intval) {
-        window = initWindow(swidth, sheight);
-        initGraphicsHandle(swidth, sheight, GENERALZONE, qtrue);
+        window = initWindow(SCREEN_WIDTH, SCREEN_HEIGHT);
+        initGraphicsHandle(SCREEN_WIDTH, SCREEN_HEIGHT, GENERALZONE, qtrue);
         closeLevelFile();
 
         while(!glfwWindowShouldClose(window))
@@ -178,10 +210,11 @@ int main(int argc, char **argv)
             render();
             glfwSwapBuffers(window);
             glfwPollEvents();
+            eng_afterRender();
         }
     }
     else {
-        initGraphicsHandle(swidth, sheight, GENERALZONE, qfalse);
+        initGraphicsHandle(SCREEN_WIDTH, SCREEN_HEIGHT, GENERALZONE, qfalse);
         closeLevelFile();
 
         while(qtrue)

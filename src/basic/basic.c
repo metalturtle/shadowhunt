@@ -613,3 +613,10 @@ void s2imap_remove(s2imap_t *smap, const char *key)
     }
 }
 
+
+
+
+float func_absFloat(float a)
+{
+    return ABS(a);
+}

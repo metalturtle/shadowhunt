@@ -13,13 +13,14 @@ extern "C" {
 #include "../lib/cJSON/cJSON.h"
 
 
-#define MAX(a,b) (a)>(b)?(a):(b)
-#define MIN(a,b) (a)<(b)?(a):(b)
+#define MAX(a,b) ((a)>(b)?(a):(b))
+#define MIN(a,b) ((a)<(b)?(a):(b))
 // #define CEIL(a) ((a) - ((int)(a))) > 0 ? ((int)(a) + 1) : (a)
 #define FRACT(a) ((a) - (int)(a))
 #define CEIL(a) ((float)(int)((a) + (1 - FRACT(a))))
 #define FLOOR(a) ((float)(int)(a))
 #define ABS(a) (((a) < 0)? -(a) : (a))
+#define SIGNUM(a) (((a) > 0) ? 1 : ((a) == 0) ? 0 : -1)
 
 typedef enum
 {
@@ -92,7 +93,7 @@ extern void net_sleep(int msec);
 
 #define	MAX_MSGLEN 16384
 #define MAX_SEGMENTLEN 4096
-#define SENDWINDOW_SIZE 4
+#define SENDWINDOW_SIZE 8
 typedef enum
 {
     NETCON_WAITTIME,
@@ -103,6 +104,7 @@ typedef enum
 
 typedef enum
 {
+    NETCON_PACKET_READY,
     NETCON_PACKET_SENT,
     NETCON_PACKET_FRAGMENTED,
     NETCON_PACKET_SUCCESS,
@@ -150,6 +152,7 @@ extern void printbit(char byte);
 typedef enum
 {
     SYSEVENT_KEY,
+    SYSEVENT_MOUSE,
     SYSEVENT_PACKET
 } sysEventType_e;
 
@@ -303,6 +306,7 @@ extern void s2imap_remove(s2imap_t *smap, const char *key);
     (v).size+=1; \
 } \
 
+#define vecpop(v) (v).arr[(v).size--];
 #define vecget(v,i) (v).arr[(i)]
 #define vecset(v,i,val) (v).arr[(i)] = val
 #define vecsize(v) (v).size
@@ -312,6 +316,7 @@ extern void s2imap_remove(s2imap_t *smap, const char *key);
 
 extern void eng_init();
 extern void eng_runFrame();
+extern void eng_afterRender();
 
 /********************FILES********************/
 
@@ -324,6 +329,21 @@ extern void closeLevelFile();
 
 extern float getScreenWidth();
 extern float getScreenHeight();
+
+
+/********************UTIL********************/
+
+
+typedef struct intPair_st
+{
+    int a;
+    int b;
+} intPair_t;
+
+
+// extern void minInt_func(int a, int b);
+// extern void minFloat_func(float a, float b);
+extern float func_absFloat(float a);
 
 #ifdef __cplusplus
 }
