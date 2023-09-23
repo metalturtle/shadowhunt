@@ -534,7 +534,7 @@ void drawRect(int texregid)
     glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
 }
 
-void drawSprite(int spriteID, float x, float y, float w, float h, float angle)
+void drawSprite(int spriteID, float x, float y, float rect[4], float angle)
 {
     int shaderProgram = vecget(GraphicsHandle.shaderProgramList, 0);
     int VAO = SpriteHandle.spriteVAO;
@@ -544,14 +544,15 @@ void drawSprite(int spriteID, float x, float y, float w, float h, float angle)
     camera_t camera = GraphicsHandle.camera;
     unsigned int texName = SpriteHandle.texNameList[spriteID];
 
-    w /= cellsize;
-    h /= cellsize;
+    rect[2] /= cellsize;
+    rect[3] /= cellsize;
 
     glm::mat4 trans = glm::mat4(1.0f);
     trans = glm::ortho(0.0f, swidth / cellsize, 0.0f, sheight / cellsize, -10.0f, 100.0f);
     trans = glm::translate(trans, glm::vec3(-camera.window[0] + x, -camera.window[1] + y, 0.0f));
     trans = glm::rotate(trans, angle, glm::vec3(0.0f, 0.0f, 1.0f));
-    trans = glm::scale(trans, glm::vec3(w, h, 1.0f));
+    trans = glm::translate(trans, glm::vec3(rect[0], rect[1], 0.0f));
+    trans = glm::scale(trans, glm::vec3(rect[2], rect[3], 1.0f));
 
     glUseProgram(shaderProgram);
 
@@ -608,6 +609,7 @@ int render()
     float col = 0.1f;
     entitySprite_t *entSprite;
     animatedSprite_t *animSprite;
+    rect2_t bound;
     // int shaderProgram;
 
     glClearColor(col ,col , col, 1.0);
@@ -633,9 +635,10 @@ int render()
     {
         entSprite = &vecget(entSpriteList.renderList, i);
 
+
         drawSprite(entSprite->texID,
                 entSprite->pos[0], entSprite->pos[1],
-                entSprite->rect[2], entSprite->rect[3],
+                entSprite->rect,
                 entSprite->angle
                 );
     }
@@ -648,16 +651,21 @@ int render()
     {
         rect2set(wall, world.worldWallArray[i].rect);
 
-        drawSprite(2, wall[0], wall[1], wall[2], wall[3], 0);
+        bound[0] = bound[1] = 0;
+        bound[2] = wall[2];
+        bound[3] = wall[3];
+
+        drawSprite(2, wall[0], wall[1], bound, 0);
     }
 
     for(int i = 0; i < vecsize(animSpriteList.renderList); i++)
     {
         animSprite = &vecget(animSpriteList.renderList, i);
-        // drawAnimSprite(animSprite);
+
+
         drawSprite(animSprite->texID,
                 animSprite->pos[0], animSprite->pos[1],
-                animSprite->rect[2], animSprite->rect[3],
+                animSprite->rect,
                 animSprite->angle
                 );
     }
@@ -677,10 +685,13 @@ int render()
         float angle = vec3getang2(dir);
         float dist = vec3length(dir);
 
+        bound[0] = bound[1] = 0;
+        bound[2] = dist;
+        bound[3] = 1;
 
         drawSprite(2,
                 pos[0], pos[1],
-                dist, 1,
+                bound,
                 angle
                 );
     }

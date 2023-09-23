@@ -14,7 +14,7 @@ void cl_addInputCmd()
 
     inputCommandList_t *inputCommandList;
 
-    // inputCommandList = client.clRep.inputCommandList;
+
     inputCommandList = &vecget(cl_inputList.list, 0);
 
     if(inpCmd_isFull(inputCommandList))
@@ -73,7 +73,7 @@ void cl_processSysCmd(bitstream_t *readStream)
         printf("setting sending timer \n");
     }
 }
-// void startTimer(endTimer_t *timer,unsigned int duration)
+
 
 void cl_ackInput(bitstream_t *readStream)
 {
@@ -365,6 +365,7 @@ void cl_frame()
 {
     cl_addInputCmd();
 
+    
     eng_processClientEntities();
 
     // ent_setAllSpritePos();

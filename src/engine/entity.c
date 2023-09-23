@@ -18,8 +18,13 @@ entitySerializerList_t entSerializerList;
 entitySpriteList_t entSpriteList;
 animatedSpriteList_t animSpriteList;
 
-rayList_t rayList;
 renderRayList_t renderRayList;
+// emittedRayList_t emittedRayList;
+// rayEntityList_t rayEntityList;
+// rayHitList_t rayHitList;
+killIDList_t killIDList;
+// rayHandleList_t rayHandleList;
+rayWeaponHandle_t rayWeaponHandle;
 
 /********************ENTITY********************/
 
@@ -75,6 +80,10 @@ void ent_initClientEntList(int conID, clientEntityRecordList_t *clEntRecordList)
 
     // initialize quick stream that stores a list of new entities to send
     streamQuick_init(&clEntRecordList->newEntRecord, NULL, NULL);
+
+
+    // initialize quick stream that stores a list of entities to remove
+    streamQuick_init(&clEntRecordList->removeEntRecord, NULL, NULL);
 }
 
 
@@ -87,7 +96,8 @@ void ent_setSerializer(
     // int (*readInitParam)(int, bitstream_t *),
     int (*readInitParam)(bitstream_t *),
     int (*applyInitParam)(),
-    int (*writeInitParam)(int, int, bitstream_t *)
+    int (*writeInitParam)(int, int, bitstream_t *),
+    void (*removeEntity)(int)
     )
 {
     int initSize = ENT_INITSIZE;
@@ -101,6 +111,7 @@ void ent_setSerializer(
     entSerialize->readInitParam = readInitParam;
     entSerialize->applyInitParam = applyInitParam;
     entSerialize->writeInitParam = writeInitParam;
+    entSerialize->removeEntity = removeEntity;
 
     //length of the number of states the entity has
     entSerialize->stateLen = stateSize;
@@ -127,8 +138,6 @@ void ent_setSerializer(
     // location in clientRecordList vector
     entSerialize->conIDMap = i2imap_init(GENERALZONE);
 
-    //set the client entity to -1
-    entSerialize->clientEntID = -1;
 }
 
 
@@ -221,6 +230,50 @@ void ent_readNewEntList(
 }
 
 
+// read list of new entities that should be created
+void ent_readRemoveEntList(
+    int conID,
+    int entType,
+    entitySerializer_t *entSerializer,
+    bitstream_t *bs
+    )
+{
+    // get the particular client entity record list
+    int recID = i2imap_get(entSerializer->conIDMap, conID);
+    clientEntityRecordList_t *clEntList = &vecget(entSerializer->clientRecordList, recID);
+
+    
+    // get the number of records that were sent
+    int recordCount = streamQuick_readCount(&clEntList->removeEntRecord, bs);
+
+
+    for(int i = 0; i < recordCount; i++)
+    {
+        // get the server entity id
+        int remoteEntID = stream_readInt(bs);
+
+
+        // check if the server entity id already exists, which means
+        // entity is already created
+        int clientEntID = i2imap_get(entSerializer->translateIDMap, remoteEntID);
+        if(clientEntID < 0)
+            continue;
+
+
+
+        // if no entities are created then skip
+        if(clientEntID < 0)
+            continue;
+
+        
+        entSerializer->removeEntity(clientEntID);
+
+        // add mapping for the server entity id to the client entity id
+        i2imap_remove(entSerializer->translateIDMap, remoteEntID);
+    }
+}
+
+
 // write list of new entities for sending to a client
 void ent_writeNewEntList(int conID, entitySerializer_t *entSerializer, netcon_t *con, bitstream_t *bs)
 {
@@ -240,6 +293,29 @@ void ent_writeNewEntList(int conID, entitySerializer_t *entSerializer, netcon_t 
 
     // write the stored list of new entities and their initialization params
     streamQuick_writePacket(&clEntList->newEntRecord, bs, con);
+}
+
+
+// write list of new entities for sending to a client
+void ent_writeRemoveEntList(int conID, entitySerializer_t *entSerializer, netcon_t *con, bitstream_t *bs)
+{
+    // get the client entity record list
+    int recID = i2imap_get(entSerializer->conIDMap, conID);
+    clientEntityRecordList_t *clEntList = &vecget(entSerializer->clientRecordList, recID);
+
+
+    // if there is nothing to write then return
+    if(streamQuick_getRecordCount(&clEntList->removeEntRecord) <= 0) {
+        return;
+    }
+
+
+    // write new entity command
+    stream_writeByte(bs, ENTCMD_REMOVE);
+
+    // write the stored list of new entities and their initialization params
+    // streamQuick_writePacket(&clEntList->newEntRecord, bs, con);
+    streamQuick_writePacket(&clEntList->removeEntRecord, bs, con);
 }
 
 
@@ -321,6 +397,10 @@ void ent_writeSerializerList(int conID, netcon_t *con, bitstream_t *bs)
         ent_writeNewEntList(conID, entSerializer, con, bs);
 
 
+        // write the list of new entities to remove
+        ent_writeRemoveEntList(conID, entSerializer, con, bs);
+        
+
         // write the entity state
         ent_writeStateList(conID, entSerializer, con, bs);
 
@@ -369,6 +449,9 @@ void ent_readSerializerList(int conID, netcon_t *con, bitstream_t *bs)
                 case ENTCMD_NEW:
                     ent_readNewEntList(conID, i, entSerializer, bs);
                     break;
+                case ENTCMD_REMOVE:
+                    ent_readRemoveEntList(conID, i, entSerializer, bs);
+                    break;
                 case ENTCMD_STATE:
                     ent_readEntStateList(entSerializer, bs);
                     break;
@@ -395,6 +478,8 @@ void ent_ackSerializerList(int conID, netcon_t *con, bitstream_t *bs)
 
 
         streamQuick_acknowledge(&(clEntList->newEntRecord), con);
+
+        streamQuick_acknowledge(&(clEntList->removeEntRecord), con);
 
         // loop through the entity records for the client
         for(int e = 0; e < vecsize(clEntList->recordList); e++)
@@ -521,7 +606,7 @@ void ent_handleClientJoin(int conID, netcon_t *con)
 }
 
 
-void ent_setupSyncedEnt(int entID, int entType)
+void ent_addSyncedEntState(int entID, int entType)
 {
     entitySerializer_t *entSerialize = &entSerializerList.list[entType];
     if(entID == vecsize(entSerialize->entityStateList)) {
@@ -564,10 +649,10 @@ void ent_addSyncedEntToClient(int entID, int conID, netcon_t *con, int entType)
     // if no unused entity record, then extend vector
     if(entRecord == NULL)
     {
+        freeid = vecsize(clEntList->recordList);
         vecpush(clEntList->bitmap, byte, 0);
         vecpushempty(clEntList->recordList, entityRecord_t);
-        entRecord = &vecget(clEntList->recordList, vecsize(clEntList->recordList) - 1);
-        freeid = vecsize(clEntList->recordList) - 1;
+        entRecord = &vecget(clEntList->recordList, freeid);
     }
 
 
@@ -591,6 +676,53 @@ void ent_addSyncedEntToClient(int entID, int conID, netcon_t *con, int entType)
     printf("2 adding new entity to the new ent list %d %d \n", conID, entID);
 }
 
+
+void ent_removeSyncedEntState(int entID, int entType)
+{
+    entitySerializer_t *entSerialize = &entSerializerList.list[entType];
+    entityStateBitmap_t *entStateBitmap = &vecget(entSerialize->entityStateList, entID);
+    zidfree(entStateBitmap->state);
+    bm_setBitVal(entSerialize->entityBitmap.arr, entID, 0);
+}
+
+void ent_removeSyncedEntFromClient(int entID, int conID, netcon_t *con, int entType)
+{
+    bitstream_t bs;
+    entitySerializer_t *entSerializer = &(entSerializerList.list[entType]);
+
+
+    // get the client entity record list
+    int recID = i2imap_get(entSerializer->conIDMap, conID);
+    clientEntityRecordList_t *clEntList = &vecget(entSerializer->clientRecordList, recID);
+
+
+    for(int e = 0; e < vecsize(clEntList->recordList); e++)
+    {
+        if(!bm_getBitVal(clEntList->bitmap.arr, e))
+            continue;
+
+        
+        entityRecord_t *entRecord = &vecget(clEntList->recordList, e);
+
+        if(entRecord->entID == entID)
+        {
+            // zidfree(entRecord->recentRecord.stateChangeBm);
+            streamRecent_close(&entRecord->recentRecord);
+            streamQuick_begin(&clEntList->removeEntRecord, con, &bs);
+            stream_writeInt(&bs, entID);
+            streamQuick_end(&clEntList->removeEntRecord, con, &bs);
+            bm_setBitVal(clEntList->bitmap.arr, e, 0);
+            break;
+        }
+    }
+}
+
+
+void ent_handleClientLeave(int conID, netcon_t *con)
+{
+    intPair_t entIDPair = ent_removeEntityFromClient(conID, con);
+    ent_removeSyncedEntFromClient(entIDPair.a, conID, con, entIDPair.b);
+}
 
 /********************SPRITE********************/
 
@@ -645,13 +777,18 @@ void ent_initVectorEntityList()
 {
     // inputCommandList_t
     int initSize = ENT_INITSIZE;
-    vecinit(GENERALZONE, vectorEntityList.movableList, movableEntity_t, initSize);
+
+    vecinit(GENERALZONE, vectorEntityList.posList, entVec_t, initSize);
+    vecinit(GENERALZONE, vectorEntityList.movableList, entityMove_t, initSize);
     // vecinit(GENERALZONE, vectorEntityList.spriteList, entitySprite_t, initSize);
     vecinit(GENERALZONE, vectorEntityList.animSpriteList, animatedSprite_t, initSize);
     vecinit(GENERALZONE, vectorEntityList.shootTimerList, endTimer_t, initSize);
     vecinit(GENERALZONE, vectorEntityList.moveIDList, int, initSize);
     vecinit(GENERALZONE, vectorEntityList.posInterpolateList, positionInterpolate_t, initSize);
     vecinit(GENERALZONE, vectorEntityList.angleInterpolateList, angleInterpolate_t, initSize);
+    // vecinit(GENERALZONE, vectorEntityList.rayEntIDList, int, initSize);
+    vecinit(GENERALZONE, vectorEntityList.weaponOnHandList, weaponOnHand_t, initSize);
+    vecinit(GENERALZONE, vectorEntityList.healthList, int, initSize);
     vecinit(GENERALZONE, vectorEntityList.bitmap, byte, initSize/8);
     vectorEntityList.mainEntMap = i2imap_init(GENERALZONE);
 }
@@ -663,38 +800,43 @@ int ent_addVectorEntity()
     int id = bm_findEmpty(vectorEntityList.bitmap.arr, vecsize(vectorEntityList.bitmap));
     if(id < 0)
     {
-        id = vecsize(vectorEntityList.movableList);
-        vecpushempty(vectorEntityList.movableList, movableEntity_t);
+        id = vecsize(vectorEntityList.posList);
+        vecpushempty(vectorEntityList.posList, entVec_t);
+        vecpushempty(vectorEntityList.movableList, entityMove_t);
         vecpushempty(vectorEntityList.animSpriteList, animatedSprite_t);
         vecpushempty(vectorEntityList.shootTimerList, endTimer_t);
         vecpushempty(vectorEntityList.posInterpolateList, positionInterpolate_t);
         vecpushempty(vectorEntityList.angleInterpolateList, angleInterpolate_t);
         vecpushempty(vectorEntityList.moveIDList, int);
+        vecpushempty(vectorEntityList.weaponOnHandList, weaponOnHand_t);
+        vecpushempty(vectorEntityList.healthList, int);
     }
 
-    movableEntity_t *moveEnt = &vecget(vectorEntityList.movableList, id);
+    entVec_t *entPos = &vecget(vectorEntityList.posList, id);
+    entityMove_t *moveEnt = &vecget(vectorEntityList.movableList, id);
     animatedSprite_t *sprite = &vecget(vectorEntityList.animSpriteList, id);
     endTimer_t *endTimer = &vecget(vectorEntityList.shootTimerList, id);
     positionInterpolate_t *posIntp = &vecget(vectorEntityList.posInterpolateList, id);
     angleInterpolate_t *angIntp = &vecget(vectorEntityList.angleInterpolateList, id);
+    weaponOnHand_t *weaponOnHand = &vecget(vectorEntityList.weaponOnHandList, id);
 
 
+    vec3xyz(entPos->pos, 300, 330, 300);
     vec3xyz(moveEnt->pos, 300, 330, 300);
-    rect2xywh(moveEnt->bound, 0, 0, 10, 10);
+    rect2xywh(moveEnt->rect, -5, -5, 10, 10);
 
-    vec3set(moveEnt->move.pos, moveEnt->pos);
-    rect2set(moveEnt->move.rect, moveEnt->bound);
-    vec3xyz(moveEnt->move.dir, 0, 0, 0);
+    vec3set(moveEnt->pos, moveEnt->pos);
+    vec3xyz(moveEnt->dir, 0, 0, 0);
 
     vec3set(sprite->pos, moveEnt->pos);
-    rect2set(sprite->rect, moveEnt->bound);
-    // rect2xywh(sprite->rect, 0, 0, 10, 10);
+    // rect2set(sprite->rect, moveEnt->bound);
+    rect2xywh(sprite->rect, -5, -5, 10, 10);
     startTimer(endTimer, 200);
     zmemset(posIntp, 0, sizeof(positionInterpolate_t));
     zmemset(angIntp, 0, sizeof(angleInterpolate_t));
 
 
-    int moveID = physics_addBody(&moveEnt->move);
+    int moveID = physics_addBody(moveEnt);
     vecset(vectorEntityList.moveIDList, id, moveID);
 
 
@@ -702,26 +844,31 @@ int ent_addVectorEntity()
     sprite->curSprite = 0;
 
 
+    ent_setRayWeapon(&rayWeaponHandle, weaponOnHand, id, moveEnt);
+
+    vecset(vectorEntityList.healthList, id, 100);
+
     bm_setBitVal(vectorEntityList.bitmap.arr, id, 1);
+
     return id;
 }
 
 void ent_removeVectorEntity(int entID)
 {
+    int moveID = vecget(vectorEntityList.moveIDList, entID);
+    physics_removeBody(moveID);
 
+    weaponOnHand_t *weaponOnHand = &vecget(vectorEntityList.weaponOnHandList, entID);
+    ent_removeRayWeapon(&rayWeaponHandle, weaponOnHand);
+
+    bm_setBitVal(vectorEntityList.bitmap.arr, entID, 0);
 }
 
 /********************RAY********************/
 
-void ent_initRayList()
+void ent_initRayRenderList()
 {
     int initSize = ENT_INITSIZE;
-    vecinit(GENERALZONE, rayList.xList, float, initSize);
-    vecinit(GENERALZONE, rayList.yList, float, initSize);
-    vecinit(GENERALZONE, rayList.xDirList, float, initSize);
-    vecinit(GENERALZONE, rayList.yDirList, float, initSize);
-
-    
     vecinit(GENERALZONE, renderRayList.xList, float, initSize);
     vecinit(GENERALZONE, renderRayList.yList, float, initSize);
     vecinit(GENERALZONE, renderRayList.xDirList, float, initSize);
@@ -729,15 +876,238 @@ void ent_initRayList()
     vecinit(GENERALZONE, renderRayList.endTimeList, unsigned long int, initSize);
 }
 
+void ent_initRayHandleList(rayHandleList_t *rayHandleList)
+{
+    int initSize = ENT_INITSIZE;
+    
+    emittedRayList_t *emittedRayList = &rayHandleList->emittedRayList;
+    rayEntityList_t *rayEntityList = &rayHandleList->rayEntityList;
+    rayHitList_t *rayHitList = &rayHandleList->rayHitList;
 
-/********************INIT********************/
+    vecinit(GENERALZONE, emittedRayList->entIDList, int, initSize);
+    vecinit(GENERALZONE, emittedRayList->xList, float, initSize);
+    vecinit(GENERALZONE, emittedRayList->yList, float, initSize);
+    vecinit(GENERALZONE, emittedRayList->xDirList, float, initSize);
+    vecinit(GENERALZONE, emittedRayList->yDirList, float, initSize);
+
+
+    vecinit(GENERALZONE, rayEntityList->entIDList, int, initSize);
+    vecinit(GENERALZONE, rayEntityList->entList, entityMove_t, initSize);
+    vecinit(GENERALZONE, rayEntityList->entBitmap, byte, initSize/8);
+
+
+    vecinit(GENERALZONE, rayHitList->fromList, int, initSize);
+    vecinit(GENERALZONE, rayHitList->toList, int, initSize);
+    vecinit(GENERALZONE, rayHitList->uList, float, initSize);
+}
+
+
+int ent_addRayEntity(rayHandleList_t *rayHandleList, int entID, entityMove_t *setMove)
+{
+    int id = bm_findEmpty(rayHandleList->rayEntityList.entBitmap.arr,
+         vecsize(rayHandleList->rayEntityList.entBitmap));
+    if(id < 0)
+    {
+        id = vecsize(rayHandleList->rayEntityList.entList);
+        vecpushempty(rayHandleList->rayEntityList.entList, entityMove_t);
+        vecpushempty(rayHandleList->rayEntityList.entIDList, int);
+    }
+
+    entityMove_t *entMove = &vecget(rayHandleList->rayEntityList.entList, id);
+    vec3set(entMove->pos, setMove->pos);
+    rect2set(entMove->rect, setMove->rect);
+    vec3xyz(entMove->dir, 0, 0, 0);
+    vecset(rayHandleList->rayEntityList.entIDList, id, entID);
+
+    bm_setBitVal(rayHandleList->rayEntityList.entBitmap.arr, id, 1);
+    
+    return id;
+}
+
+void ent_removeRayEntity(rayHandleList_t *rayHandleList, int entID)
+{
+    bm_setBitVal(rayHandleList->rayEntityList.entBitmap.arr, entID, 0);
+}
+
+int ent_emitRay(rayHandleList_t *rayHandleList, int entID, float pos[2], float dir[2])
+{
+    int id = vecsize(rayHandleList->emittedRayList.xList);
+    vecpush(rayHandleList->emittedRayList.xList, float, pos[0]);
+    vecpush(rayHandleList->emittedRayList.yList, float, pos[1]);
+    vecpush(rayHandleList->emittedRayList.xDirList, float, dir[0]);
+    vecpush(rayHandleList->emittedRayList.yDirList, float, dir[1]);
+    vecpush(rayHandleList->emittedRayList.entIDList, int, entID);
+
+    return id;
+}
+
+void ent_resetRayList(rayHandleList_t *rayHandleList)
+{
+    vecreset(rayHandleList->emittedRayList.xList);
+    vecreset(rayHandleList->emittedRayList.yList);
+    vecreset(rayHandleList->emittedRayList.xDirList);
+    vecreset(rayHandleList->emittedRayList.yDirList);
+    vecreset(rayHandleList->emittedRayList.entIDList);
+}
+
+void ent_setHitEntity(rayHandleList_t *rayHandleList, int rayID, int fromID, int toID)
+{
+    vecpush(rayHandleList->rayHitList.fromList, int, fromID);
+    vecpush(rayHandleList->rayHitList.toList, int, toID);
+}
+
+void ent_resetHitEntityList(rayHandleList_t *rayHandleList)
+{
+    vecreset(rayHandleList->rayHitList.fromList);
+    vecreset(rayHandleList->rayHitList.toList);   
+}
+
+
+void ent_initKillList()
+{
+    int initSize = ENT_INITSIZE;
+    vecinit(GENERALZONE, killIDList.entIDList, int, initSize);
+}
+int ent_addKillID(int entID)
+{
+    vecpush(killIDList.entIDList, int, entID);
+}
+void ent_resetKillList()
+{
+    vecreset(killIDList.entIDList);
+}
+
+/********************WEAPON********************/
+
+void ent_initRayWeaponHandle(rayWeaponHandle_t * weaponHandle, weaponType_t weaponType)
+{
+    ent_initRayHandleList(&weaponHandle->rayHandleList);
+    weaponHandle->weaponType = weaponType;
+}
+
+void ent_setRayWeapon(rayWeaponHandle_t *weaponHandle, weaponOnHand_t *weaponOnHand, int entID, entityMove_t *moveEnt)
+{
+    startTimer(&weaponOnHand->currentShootEndTime, 0);
+    startTimer(&weaponOnHand->nextShootEndTime, 0);
+    weaponOnHand->ammoCount = 10;
+    weaponOnHand->rayEntID = ent_addRayEntity(&weaponHandle->rayHandleList, entID, moveEnt);
+}
+
+void ent_setRayWeaponEntity(rayWeaponHandle_t *weaponHandle, weaponOnHand_t *weaponOnHand, entityMove_t *moveEnt)
+{
+    entityMove_t *rayEnt;
+    rayEnt = &vecget(weaponHandle->rayHandleList.rayEntityList.entList, weaponOnHand->rayEntID);
+    vec3set(rayEnt->pos, moveEnt->pos);
+}
+
+void ent_removeRayWeapon(rayWeaponHandle_t *weaponHandle, weaponOnHand_t *weaponOnHand)
+{
+    startTimer(&weaponOnHand->currentShootEndTime, 0);
+    startTimer(&weaponOnHand->nextShootEndTime, 0);
+    weaponOnHand->ammoCount = 0;
+    ent_removeRayEntity(&weaponHandle->rayHandleList, weaponOnHand->rayEntID);
+}
+
+qbool ent_handleRayWeaponShoot(rayWeaponHandle_t *weaponHandle, int entID, weaponOnHand_t *weaponOnHand, float pos[2], float angle)
+{
+    float dir[3];
+    if(weaponOnHand->ammoCount <= 0)
+        return qfalse;
+
+    if(!checkTimer(&weaponOnHand->currentShootEndTime))
+        return qfalse;
+
+    if(!checkTimer(&weaponOnHand->nextShootEndTime))
+        return qfalse;
+
+    startTimer(&weaponOnHand->currentShootEndTime, weaponHandle->weaponType.currentShootDelay);
+    startTimer(&weaponOnHand->nextShootEndTime, weaponHandle->weaponType.nextShootDelay);
+
+
+    vec3setang2(dir, angle);
+    vec3mult(dir, 50);
+
+    ent_emitRay(&weaponHandle->rayHandleList, entID, pos, dir);
+
+    weaponOnHand->ammoCount -= 1;
+
+    return qtrue;
+}
+
+void ent_resetRayWeapon(rayWeaponHandle_t *weaponHandle)
+{
+    ent_resetRayList(&weaponHandle->rayHandleList);
+}
+
+void ent_initVectorRayWeapon()
+{
+    weaponType_t weaponType;
+
+    weaponType.maxAmmoCount = 10;
+    weaponType.accuracy = 0;
+    weaponType.currentShootDelay = 0;
+    weaponType.nextShootDelay = 400;
+    weaponType.onHandCapacity = 10;
+    weaponType.totalCapacity = 10;
+
+    ent_initRayWeaponHandle(&rayWeaponHandle, weaponType);
+}
+
+/********************PICKUPS********************/
+
+// typedef struct PickupList_st
+// {
+//     vector(entVec_t) posList;
+//     vector(entRect_t) rectList;
+//     vector(byte) bitmap;
+// } PickupList_t;
+
+
+void ent_initPickupList(pickupList_t *pickupList)
+{
+    int initSize = ENT_INITSIZE;
+    vecinit(GENERALZONE, pickupList->posList, entVec_t, initSize);
+    vecinit(GENERALZONE, pickupList->rectList, entRect_t, initSize);
+    vecinit(GENERALZONE, pickupList->bitmap, byte, initSize/8);
+}
+
+int ent_addPickup(pickupList_t *pickupList, entVec_t posToSet, entRect_t rectToSet)
+{
+    int id = bm_findEmpty(pickupList->bitmap.arr,
+    vecsize(pickupList->bitmap));
+    if(id < 0)
+    {
+        id = vecsize(pickupList->posList);
+        vecpushempty(pickupList->posList, entVec_t);
+        vecpushempty(pickupList->rectList, entRect_t);
+    }
+
+    entVec_t *pickupPos = &vecget(pickupList->posList, id);
+    entRect_t *pickupRect = &vecget(pickupList->rectList, id);
+
+    vec3set(pickupPos->pos, posToSet.pos);
+    rect2set(pickupRect->rect, rectToSet.rect);
+
+    bm_setBitVal(pickupList->bitmap.arr, id, 1);
+
+    return id;
+}
+
+void ent_removePickup(pickupList_t *pickupList, int pickupID)
+{
+    bm_setBitVal(pickupList->bitmap.arr, pickupID, 0);
+}
+
 
 
 void ent_init()
 {
     ent_initEntList();
     ent_initSpriteList();
-    ent_initRayList();
+    ent_initRayRenderList();
+    // ent_initRayList();
     // ent_initMoveList();
+    ent_initVectorRayWeapon();
     ent_initVectorEntityList();
+    ent_initKillList();
 }

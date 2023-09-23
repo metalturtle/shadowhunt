@@ -25,7 +25,7 @@ int serv_checkClientRepMap(netaddr_t *clAddr)
 void serv_addSyncedEnt(int entID, int entType)
 {
 
-    ent_setupSyncedEnt(entID, entType);
+    ent_addSyncedEntState(entID, entType);
 
 
     serv_clrep_t *addRep;
@@ -61,6 +61,25 @@ void serv_setupNewClient(serv_clrep_t *newClRep, int conID)
     serv_addSyncedEnt(entID, entType);
 }
 
+
+void serv_removeSyncedEnt(int entID, int entType)
+{
+
+    ent_removeSyncedEntState(entID, entType);
+
+
+    serv_clrep_t *addRep;
+    for(int i = 0; i < vecsize(server.clRepList); i++)
+    {
+        if(!bm_getBitVal(server.clRepBitMap.arr, i))
+            continue;
+
+
+        addRep = &vecget(server.clRepList, i);
+        printf("removing synced entity for the client %d \n", i);
+        ent_removeSyncedEntFromClient(entID, i, addRep->con, entType);
+    }
+}
 
 serv_clrep_t *serv_addClient()
 {
@@ -108,18 +127,20 @@ serv_clrep_t *serv_addClient()
 
 /********************DISCONNECT CLIENT********************/
 
-void serv_disconnectClient(int conid)
+void serv_disconnectClient(int conID)
 {
     serv_clrep_t *clRep;
-    clRep = &vecget(server.clRepList, conid);
+    clRep = &vecget(server.clRepList, conID);
     
+    ent_handleClientLeave(conID, clRep->con);
+
     zidfree(clRep->con);
 
-    bm_setBitVal(server.clRepBitMap.arr, conid, 0);
+    bm_setBitVal(server.clRepBitMap.arr, conID, 0);
 
     s2imap_remove(server.clRepMap, netAddrToString(clRep->con->remoteAddress));
 
-    inputCommandList_t *inpCmdList = &vecget(cl_inputList.list, conid);
+    inputCommandList_t *inpCmdList = &vecget(cl_inputList.list, conID);
     inpCmd_free(inpCmdList);
 }
 
@@ -402,7 +423,6 @@ void serv_writeToClient(int conID, serv_clrep_t* clRep)
 
 
     serv_writeSysCmd(clRep, &writeStream);
-
 
 
     serv_writeEntities(conID, clRep, &writeStream);

@@ -101,6 +101,10 @@ int physics_addBody(entityMove_t *moveObj)
     return id;
 }
 
+void physics_removeBody(int moveID)
+{
+    bm_setBitVal(moveList.bitmap.arr, moveID, 0);
+}
 
 void physics_setBody(entityMove_t *moveObj, int moveID)
 {

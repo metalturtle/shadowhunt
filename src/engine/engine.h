@@ -91,6 +91,7 @@ extern int streamReliable_callWriteFunc(relStreamRecord_t *relRecord, netcon_t *
 extern void streamReliable_writePacket(relStreamRecord_t *relRecord ,bitstream_t *bs, netcon_t *con);
 extern void streamReliable_readPacket(relStreamRecord_t *relRecord, bitstream_t *bs);
 extern void streamReliable_acknowledge(relStreamRecord_t *relRecord, netcon_t *con);
+extern void streamRecent_close(recentStreamRecord_t *recentRecord);
 
 // extern void streamRecent_init(recentStreamRecord_t *recentRecord, int stateSize, int (*readFunc)(bitstream_t *, byte *), int (*writeFunc)(bitstream_t *, byte *));
 extern void streamRecent_init(
@@ -287,6 +288,7 @@ extern void serv_init();
 extern void serv_frame();
 extern void serv_packetEvent(netaddr_t *fromAddress, byte *data, int len);
 extern void serv_addSyncedEnt(int, int);
+extern void serv_removeSyncedEnt(int entID, int entType);
 
 /********************CLIENT********************/
 

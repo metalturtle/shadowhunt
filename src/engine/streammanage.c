@@ -1177,7 +1177,7 @@ void streamRecent_acknowledge(recentStreamRecord_t *recentRecord, netcon_t *con)
             {
                 if(bm_getBitVal(stateBm, i) && bm_getBitVal(prevData->stateBm, i))
                 {
-                    printf("resetting old bit i=%d\n", i);
+                    // printf("resetting old bit i=%d\n", i);
                     bm_setBitVal(prevData->stateBm, i, 0);
                 }
             }
@@ -1264,5 +1264,21 @@ void streamRecent_setStateBits(recentStreamRecord_t *recentRecord, byte *stateBm
         {
             bm_setBitVal(recentRecord->stateChangeBm, i, 1);
         }
+    }
+}
+
+
+void streamRecent_close(recentStreamRecord_t *recentRecord)
+{
+    recentStreamNode_t *curData, *nextData;
+    zidfree(recentRecord->stateChangeBm);
+
+
+    for(curData = recentRecord->head; curData != NULL;)
+    {
+        nextData = curData->next;
+        zidfree(curData->stateBm);
+        zidfree(curData);
+        curData = nextData;
     }
 }

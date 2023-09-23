@@ -19,12 +19,13 @@ typedef enum
     ENTCMD_NEW,
     ENTCMD_DEL,
     ENTCMD_STATE,
+    ENTCMD_REMOVE,
     ENTCMD_END
 } ent_netcmd_e;
 
 typedef struct evec3_st
 {
-    float vec[3];
+    float pos[3];
 } entVec_t;
 
 typedef struct erect_st
@@ -206,14 +207,100 @@ extern int ent_createEnt(int createId, void *);
 
 
 
-/********************SHOOTER ENTITY********************/
-typedef struct movableEntity_st
-{
-    float pos[3];
-    float bound[4];
-    entityMove_t move;
-} movableEntity_t;
+// /********************SHOOTER ENTITY********************/
+// typedef struct movableEntity_st
+// {
+//     float pos[3];
+//     float bound[4];
+//     entityMove_t move;
+// } movableEntity_t;
 
+/********************SHOOTER ENTITY********************/
+typedef struct emittedRayList_st
+{
+    vector(int) entIDList;
+    vector(float) xList;
+    vector(float) yList;
+    vector(float) xDirList;
+    vector(float) yDirList;
+} emittedRayList_t;
+
+
+typedef struct renderRayList_st
+{
+    vector(float) xList;
+    vector(float) yList;
+    vector(float) xDirList;
+    vector(float) yDirList;
+    vector(unsigned long int) endTimeList;
+
+} renderRayList_t;
+
+
+typedef struct rayEntityList_st
+{
+    vector(int) entIDList;
+    vector(entityMove_t) entList;
+    vector(byte) entBitmap;
+} rayEntityList_t;
+
+
+typedef struct rayHitList_st
+{
+    vector(int) fromList;
+    vector(int) toList;
+    vector(float) uList;
+} rayHitList_t;
+
+
+typedef struct rayHandleList_st
+{
+    emittedRayList_t emittedRayList;
+    rayEntityList_t rayEntityList;
+    rayHitList_t rayHitList;
+} rayHandleList_t;
+
+
+extern void ent_initRayHandleList(rayHandleList_t *rayHandleList);
+extern int ent_addRayEntity(rayHandleList_t *rayHandleList, int entID, entityMove_t *entMove);
+extern void ent_removeRayEntity(rayHandleList_t *rayHandleList, int entID);
+extern int ent_emitRay(rayHandleList_t *rayHandleList, int entID, float pos[2], float dir[2]);
+extern void ent_setHitEntity(rayHandleList_t *rayHandleList, int rayID, int fromID, int toID);
+extern void ent_resetHitEntityList(rayHandleList_t *rayHandleList);
+extern void ent_resetRayList(rayHandleList_t *rayHandleList);
+
+/********************WEAPON********************/
+
+typedef struct weaponOnHand_st
+{
+    int ammoCount;
+	endTimer_t currentShootEndTime;
+	endTimer_t nextShootEndTime;
+    int rayEntID;
+} weaponOnHand_t;
+
+typedef struct weaponType_st
+{
+    int maxAmmoCount;
+    int accuracy;
+    int currentShootDelay;
+    int nextShootDelay;
+    int onHandCapacity;
+    int totalCapacity;
+} weaponType_t;
+
+typedef struct rayWeaponHandle_st
+{
+    weaponType_t weaponType;
+    rayHandleList_t rayHandleList;
+} rayWeaponHandle_t;
+
+extern void ent_initRayWeaponHandle(rayWeaponHandle_t * weaponHandle, weaponType_t weaponType);
+extern qbool ent_handleRayWeaponShoot(rayWeaponHandle_t *weaponHandle, int entID, weaponOnHand_t *weaponOnHand, float pos[2], float angle);
+extern void ent_setRayWeapon(rayWeaponHandle_t *weaponHandle, weaponOnHand_t *weaponOnHand, int entID, entityMove_t *moveEnt);
+extern void ent_resetRayWeapon(rayWeaponHandle_t *weaponHandle);
+extern void ent_setRayWeaponEntity(rayWeaponHandle_t *weaponHandle, weaponOnHand_t *weaponOnHand, entityMove_t *moveEnt);
+extern void ent_removeRayWeapon(rayWeaponHandle_t *weaponHandle, weaponOnHand_t *weaponOnHand);
 
 /********************ENTITY INDEX********************/
 
@@ -235,19 +322,24 @@ typedef struct angleInterpolate_st
 
 typedef struct vectorEntity_st
 {
-    movableEntity_t movable;
+    entVec_t entPos;
+    entityMove_t movable;
     entitySprite_t sprite;
 
 } vectorEntity_t;
 
 typedef struct vectorEntityList_st
 {
-    vector(movableEntity_t) movableList;
+    vector(entVec_t) posList;
+    vector(entityMove_t) movableList;
     vector(animatedSprite_t) animSpriteList;
     vector(endTimer_t) shootTimerList;
     vector(positionInterpolate_t) posInterpolateList;
     vector(angleInterpolate_t) angleInterpolateList;
+    vector(int) healthList;
     vector(int) moveIDList;
+    // vector(int) rayEntIDList;
+    vector(weaponOnHand_t) weaponOnHandList;
     vector(byte) bitmap;
 
     i2imap_t *mainEntMap;
@@ -259,6 +351,48 @@ extern void ent_initVectorEntityList();
 extern int ent_addVectorEntity();
 extern void ent_removeVectorEntity(int entID);
 
+
+/********************PICKUPS********************/
+
+typedef struct PickupList_st
+{
+    vector(entVec_t) posList;
+    vector(entRect_t) rectList;
+    vector(byte) bitmap;
+} pickupList_t;
+
+
+extern void ent_initPickupList(pickupList_t *pickupList);
+extern int ent_addPickup(pickupList_t *pickupList, entVec_t pos, entRect_t rect);
+extern void ent_removePickup(pickupList_t *pickupList, int pickupID);
+
+/********************KILLED ENTITY********************/
+
+typedef struct killedEntityList_st
+{
+    vector(animatedSprite_t) animSpriteList;
+    vector(byte) bitmap;
+
+    i2imap_t *mainEntMap;
+
+} killedEntityList_t;
+
+extern void ent_initKilledEntityList();
+extern int ent_addKilledEntity();
+extern void ent_removeKilledEntity(int entID);
+
+
+/********************KILLED ENTITY********************/
+
+typedef struct killIDList_st
+{
+    vector(int) entIDList;
+
+} killIDList_t;
+
+extern void ent_initKillList();
+extern int ent_addKillID(int entID);
+extern void ent_resetKillList();
 
 typedef struct entityStateBitmap_st
 {
@@ -273,6 +407,7 @@ typedef struct clientEntityRecordList_st
     vector(byte) bitmap;
     
     quickStreamRecord_t newEntRecord;
+    quickStreamRecord_t removeEntRecord;
 
 } clientEntityRecordList_t;
 
@@ -286,6 +421,7 @@ typedef struct entitySerializer_st
     int (*readInitParam)(bitstream_t *);
     int (*applyInitParam)();
     int (*writeInitParam)(int, int, bitstream_t *);
+    void (*removeEntity)(int);
 
     vector(clientEntityRecordList_t) clientRecordList;
     vector(byte) clientBitmap;
@@ -298,7 +434,6 @@ typedef struct entitySerializer_st
     i2imap_t *translateIDMap;
     i2imap_t *conIDMap;
 
-    int clientEntID;
 
 } entitySerializer_t;
 
@@ -317,7 +452,8 @@ extern void ent_setSerializer(
     int (*writeState)(int entID, bitstream_t *, byte *stateBm, int conID),
     int (*readInitParam)(bitstream_t *),
     int (*applyInitParam)(),
-    int (*writeInitParam)(int, int, bitstream_t *)
+    int (*writeInitParam)(int, int, bitstream_t *),
+    void (*removeEntity)(int)
     );
 
 
@@ -327,34 +463,19 @@ extern void ent_writeSerializerList(int conID, netcon_t *con, bitstream_t *bs);
 // extern void ent_ackSerializerList(bitstream_t *bs);
 extern void ent_ackSerializerList(int conID, netcon_t *con, bitstream_t *bs);
 
-extern void ent_addSyncedEntToClient(int entID, int conID, netcon_t *con, int entType);
 
 extern intPair_t ent_setupEntityForClient(int conID, netcon_t *con);
+extern intPair_t ent_removeEntityFromClient(int conID, netcon_t *con);
 extern void ent_handleClientJoin(int, netcon_t *);
+extern void ent_handleClientLeave(int conID, netcon_t *con);
 
-extern void ent_setupSyncedEnt(int entID, int entType);
+extern void ent_addSyncedEntState(int entID, int entType);
+extern void ent_addSyncedEntToClient(int entID, int conID, netcon_t *con, int entType);
 
 extern void ent_cleanupSerializerState();
 
-/********************SHOOTER ENTITY********************/
-typedef struct rayList_st
-{
-    vector(float) xList;
-    vector(float) yList;
-    vector(float) xDirList;
-    vector(float) yDirList;
-} rayList_t;
-
-
-typedef struct renderRayList_st
-{
-    vector(float) xList;
-    vector(float) yList;
-    vector(float) xDirList;
-    vector(float) yDirList;
-    vector(unsigned long int) endTimeList;
-
-} renderRayList_t;
+extern void ent_removeSyncedEntState(int entID, int entType);
+extern void ent_removeSyncedEntFromClient(int entID, int conID, netcon_t *con, int entType);
 
 
 /********************ENTITY INDEX********************/
@@ -368,7 +489,12 @@ extern entitySerializerList_t entSerializerList;
 extern entitySpriteList_t entSpriteList;
 extern animatedSpriteList_t animSpriteList;
 
-extern rayList_t rayList;
 extern renderRayList_t renderRayList;
+// extern emittedRayList_t emittedRayList;
+// extern rayEntityList_t rayEntityList;
+// extern rayHitList_t rayHitList;
+extern killIDList_t killIDList;
+
+extern rayWeaponHandle_t rayWeaponHandle;
 
 #endif

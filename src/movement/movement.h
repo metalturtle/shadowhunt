@@ -31,3 +31,5 @@ extern void physics_run();
 extern int physics_addBody(entityMove_t *entMove);
 extern void physics_setBody(entityMove_t *moveObj, int moveID);
 extern entityMove_t* physics_get(int moveID);
+
+extern void physics_removeBody(int moveID);

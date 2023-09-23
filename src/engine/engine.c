@@ -13,6 +13,7 @@ float P_X = 300,P_Y = 300;
 byte keyMap[256];
 
 struct inputCmdConfig_st inpCmdConfig;
+pickupList_t healthPickupList;
 
 #define ENTCHILD_SIZE 3
 #define ENTCHILD_SERIALIZE 0
@@ -50,13 +51,11 @@ void inpCmd_init(inputCommandList_t *inpCmdList)
 
     ptr =  zidmalloc(GENERALZONE, totalKeyLen);
 
-    // printf("key len %d %d\n", inpCmdConfig.keyByteLen, totalKeyLen);
 
     for(int i = 0; i < INPCMD_MAX_SIZE; i++)
     {
         inpCmdList->inpCmdArr[i].key = ptr;
         ptr += inpCmdConfig.keyByteLen;
-        // inpCmdList->inpCmdArr[i].key = (byte *)zidmalloc(GENERALZONE, inpCmdConfig.keyByteLen);
     }
 
     inpCmdList->start = 0;
@@ -253,7 +252,6 @@ float ray_intersect(float pos[2],float dir[2],float p1[2],float p2[2]) {
 
             calc = ray_intersect(pos,dir,stat_p[0],stat_p[1]);
 			u = MIN(calc, u);
-//			normal.set(-1,0);
 			staticNormalAngle=180;
 		}
 		else if(pos[0] > wall[0] + wall[2])
@@ -263,7 +261,6 @@ float ray_intersect(float pos[2],float dir[2],float p1[2],float p2[2]) {
 
             calc = ray_intersect(pos,dir,stat_p[0],stat_p[1]);
 			u = MIN(calc, u);
-//			normal.set(1,0);.
 			staticNormalAngle=0;
 		}
 		if(pos[1] < wall[1])
@@ -271,11 +268,9 @@ float ray_intersect(float pos[2],float dir[2],float p1[2],float p2[2]) {
             vec2xy(stat_p[0], wall[0], wall[1]);
             vec2xy(stat_p[1], wall[2], 0);
 
-			// stat_p[0].set(wall.x(),wall.y());
-			// stat_p[1].set(wall.w(),0);
+
             calc = ray_intersect(pos,dir,stat_p[0],stat_p[1]);
 			u = MIN(calc, u);
-//			normal.set(0,-1);.
 			staticNormalAngle=-90;
 		}
 		else if (pos[1] > wall[1] + wall[3])
@@ -286,26 +281,26 @@ float ray_intersect(float pos[2],float dir[2],float p1[2],float p2[2]) {
 
             calc = ray_intersect(pos,dir,stat_p[0],stat_p[1]);
 			u = MIN(calc, u);
-//			normal.set(0,1);.
 			staticNormalAngle=90;
 		}
 		return u;	
 	}
 
 
-void handle_ray(int i)
+void handle_ray(rayHandleList_t *rayHandleList, int rayID)
 {
 	float rpos[2];
 	float rdir[2];
-
+    
 
     float u = 1, temp;
     
-    rpos[0] = vecget(rayList.xList, i);
-    rpos[1] = vecget(rayList.yList, i);
-    rdir[0] = vecget(rayList.xDirList, i);
-    rdir[1] = vecget(rayList.yDirList, i);
+    rpos[0] = vecget(rayHandleList->emittedRayList.xList, rayID);
+    rpos[1] = vecget(rayHandleList->emittedRayList.yList, rayID);
+    rdir[0] = vecget(rayHandleList->emittedRayList.xDirList, rayID);
+    rdir[1] = vecget(rayHandleList->emittedRayList.yDirList, rayID);
 
+    int fromID = vecget(rayHandleList->emittedRayList.entIDList, rayID);
 
     rect2_t wall;
     for(int i = 0; i < world.worldWallSize; i++)
@@ -313,29 +308,81 @@ void handle_ray(int i)
         rect2set(wall, world.worldWallArray[i].rect);
 
         temp = check_intersection(rpos, rdir, wall);
-
-        if(u > temp)
-        {
+        if(u > temp) {
             u = temp;
         }
     }
 
     
+    for(int i = 0; i < vecsize(rayHandleList->rayEntityList.entList); i++)
+    {
+        if(!bm_getBitVal(rayHandleList->rayEntityList.entBitmap.arr, i))
+            continue;
+
+
+        int toID = vecget(rayHandleList->rayEntityList.entIDList, i);
+
+        if(fromID == toID)
+            continue;
+
+        entityMove_t *moveEnt = &vecget(rayHandleList->rayEntityList.entList, i);
+        rect2set(wall, moveEnt->rect);
+        vec2add(wall, wall, moveEnt->pos);
+
+
+        temp = check_intersection(rpos, rdir, wall);
+        if(u > temp) {
+            u = temp;
+
+            ent_setHitEntity(rayHandleList, rayID, fromID, toID);
+        }
+    }
 
     vec3mult(rdir, u);
 
     printf("u val %f  %f %f,%f \n", u, temp, rdir[0], rdir[1]);
 
-    vecset(rayList.xDirList, i, rdir[0]);
-    vecset(rayList.yDirList, i, rdir[1]);
+    vecset(rayHandleList->emittedRayList.xDirList, rayID, rdir[0]);
+    vecset(rayHandleList->emittedRayList.yDirList, rayID, rdir[1]);
 }
 
 
-void handle_ray_list()
+void handle_ray_hits()
 {
-    for(int i = 0; i < vecsize(rayList.xList); i++)
+    rayHandleList_t *rayHandleList = &rayWeaponHandle.rayHandleList;
+    int isServer = cvar_getInt("isServer");
+    if(!isServer)
+        return;
+
+    for(int i = 0; i < vecsize(rayHandleList->rayHitList.fromList); i++)
     {
-        handle_ray(i);
+        int fromID = vecget(rayHandleList->rayHitList.fromList, i);
+        int toID = vecget(rayHandleList->rayHitList.toList, i);
+        
+
+        int health = vecget(vectorEntityList.healthList, toID);
+
+        if(health > 0) {
+            health -= 30;
+            vecset(vectorEntityList.healthList, toID, health);
+            ent_setStateFlags(VECTOR_SERIALIZER, toID, 3, 1);
+            printf("setting health state flag \n");
+        }
+        
+
+        // animatedSprite_t *sprite = &vecget(vectorEntityList.animSpriteList, toID);
+        // sprite->rect[2] /= 2;
+        // sprite->rect[3] /= 2;
+        printf("hit entities: %d %d %f \n", fromID, toID, health);
+    }
+}
+
+
+void handle_ray_list(rayHandleList_t *rayHandleList)
+{
+    for(int i = 0; i < vecsize(rayHandleList->emittedRayList.xList); i++)
+    {
+        handle_ray(rayHandleList, i);
     }
 }
 
@@ -344,44 +391,47 @@ void add_ray_to_render()
 {
     float pos[2];
     float dir[2];
-    for(int i = 0; i < vecsize(rayList.xList); i++)
+    for(int i = 0; i < vecsize(rayWeaponHandle.rayHandleList.emittedRayList.xList); i++)
     {
-        pos[0] = vecget(rayList.xList, i);
-        pos[1] = vecget(rayList.yList, i);
+        pos[0] = vecget(rayWeaponHandle.rayHandleList.emittedRayList.xList, i);
+        pos[1] = vecget(rayWeaponHandle.rayHandleList.emittedRayList.yList, i);
 
-        dir[0] = vecget(rayList.xDirList, i);
-        dir[1] = vecget(rayList.yDirList, i);
+        dir[0] = vecget(rayWeaponHandle.rayHandleList.emittedRayList.xDirList, i);
+        dir[1] = vecget(rayWeaponHandle.rayHandleList.emittedRayList.yDirList, i);
 
         vecpush(renderRayList.xList, float,pos[0]);
         vecpush(renderRayList.yList, float, pos[1]);
         vecpush(renderRayList.xDirList, float, dir[0]);
         vecpush(renderRayList.yDirList, float, dir[1]);
     }
-
 }
 
-void input_func_common(inputCommandList_t *inpCmdList, movableEntity_t *moveEnt)
+void input_func_common(int entID, inputCommandList_t *inpCmdList, entityMove_t *moveEnt)
 {
     inputCommand_t *inpCmd;
-    int entID, inpLen;
-    byte up, down, left, right;
+    int inpLen;
+    byte up, down, left, right, shoot;
     float vec3[3];
     float temp;
     float speed = VECENT_SPEED;
-    float mouseXY[2];
+    float mouseXY[3];
     float angle;
+    float dir[3];
+
 
     inpLen = inpCmd_getLen(inpCmdList);
 
-    for(int i = 0; i < inpLen; i++)
+
+    for(int i = 0; i < inpLen;i++)
     {
         inpCmd = inpCmd_get(inpCmdList, i);
+
 
         up = bm_getBitVal(inpCmd->key, 0);
         down = bm_getBitVal(inpCmd->key, 1);
         left = bm_getBitVal(inpCmd->key, 2);
         right = bm_getBitVal(inpCmd->key, 3);
-
+        shoot = bm_getBitVal(inpCmd->key, 4);
 
         vec3xyz(vec3,
             right - left
@@ -391,28 +441,23 @@ void input_func_common(inputCommandList_t *inpCmdList, movableEntity_t *moveEnt)
     
         vec3unitvec(vec3, temp);
         vec3mult(vec3, speed);
-        vec3add(moveEnt->move.dir, moveEnt->move.dir, vec3);
+        vec3add(moveEnt->dir, moveEnt->dir, vec3);
 
-    
-        // if(moveEnt->move.dir[0] != 0 || moveEnt->move.dir[1] != 0)
-            // printf("setting some movement %p\n", moveEnt->move.dir);
-        
+        moveEnt->speed = 0.2f;
 
-        // vec3add(moveEnt->move.pos, moveEnt->pos, moveEnt->move.dir);
-        // inpCmd->inpX = moveEnt->move.pos[0];
-        // inpCmd->inpY = moveEnt->move.pos[1];
 
- 
-        // printf("pos for rec %d: %f, %f   %f,%f  %p\n",
-        //     inpCmd->recordID,
-        //     moveEnt->move.pos[0],
-        //     moveEnt->move.pos[1],
-        //     inpCmd->inpX,
-        //     inpCmd->inpY,
-        //     inpCmd
-        // );
-        
-        moveEnt->move.speed = 0.2f;
+        if(shoot)
+        {
+            endTimer_t *shootTimer = &vecget(vectorEntityList.shootTimerList, entID);
+
+            mouseXY[0] = inpCmd->mouseX - 0.5;
+            mouseXY[1] = inpCmd->mouseY - 0.5;
+            angle = vec3getang2(mouseXY);
+
+
+            weaponOnHand_t *weaponOnHand = &vecget(vectorEntityList.weaponOnHandList, entID);
+            ent_handleRayWeaponShoot(&rayWeaponHandle, entID, weaponOnHand, moveEnt->pos, angle);
+        }
     }
 }
 
@@ -430,8 +475,8 @@ void input_func_server()
         inpCmdList = &vecget(cl_inputList.list, i);
 
         int entID = i2imap_get(vectorEntityList.mainEntMap, i);
-        movableEntity_t *moveEnt = &vecget(vectorEntityList.movableList, entID);
-        input_func_common(inpCmdList, moveEnt);
+        entityMove_t *moveEnt = &vecget(vectorEntityList.movableList, entID);
+        input_func_common(entID, inpCmdList, moveEnt);
     }
 }
 
@@ -441,8 +486,9 @@ void input_func_client()
     inputCommandList_t *inpCmdList;
     inpCmdList = &vecget(cl_inputList.list, 0);
     
-    movableEntity_t *moveEnt = &vecget(vectorEntityList.movableList, MAIN_ENT_ID);
-    input_func_common(inpCmdList, moveEnt);
+    entityMove_t *moveEnt = &vecget(vectorEntityList.movableList, MAIN_ENT_ID);
+    input_func_common(MAIN_ENT_ID, inpCmdList, moveEnt);
+    printf("input func common \n");
 }
 
 
@@ -454,7 +500,7 @@ void set_physics_movement()
             continue;
 
 
-        movableEntity_t *moveEnt = &vecget(vectorEntityList.movableList, e);
+        entityMove_t *moveEnt = &vecget(vectorEntityList.movableList, e);
 
         // printf("checking movement %p\n", moveEnt->move.dir);
         // if(moveEnt->move.dir[0] != 0 || moveEnt->move.dir[1] != 0)
@@ -462,7 +508,7 @@ void set_physics_movement()
         
 
         int moveID = vecget(vectorEntityList.moveIDList, e);
-        physics_setBody(&moveEnt->move, moveID);
+        physics_setBody(moveEnt, moveID);
     } 
 }
 
@@ -473,8 +519,7 @@ void sprite_func()
         if(!bm_getBitVal(vectorEntityList.bitmap.arr, e))
             continue;
 
-        movableEntity_t *moveEnt = &vecget(vectorEntityList.movableList, e);
-        // entitySprite_t *entSprite = &vecget(vectorEntityList.spriteList, e);
+        entityMove_t *moveEnt = &vecget(vectorEntityList.movableList, e);
         animatedSprite_t *entSprite = &vecget(vectorEntityList.animSpriteList, e);
 
         vec3set(entSprite->pos, moveEnt->pos);   
@@ -491,8 +536,7 @@ void set_sprite_angle(int entID, int conID)
     float angle;
     byte shoot;
     endTimer_t *shootTimer;
-    float dir[3];
-
+ 
 
     animatedSprite_t *entSprite = &vecget(vectorEntityList.animSpriteList, entID);
 
@@ -518,31 +562,6 @@ void set_sprite_angle(int entID, int conID)
     {
         ent_setStateFlags(VECTOR_SERIALIZER, entID, 2, 1);
     }
-
-
-    shoot = bm_getBitVal(inpCmd->key, 4);
-
-
-    if(shoot)
-    {
-        shootTimer = &vecget(vectorEntityList.shootTimerList, entID);
-        if(checkTimer(shootTimer))
-        {
-            movableEntity_t *moveEnt = &vecget(vectorEntityList.movableList, entID);
-
-            vec3setang2(dir, angle);
-            vec3mult(dir, 50);
-
-            vecpush(rayList.xList, float, moveEnt->pos[0]);
-            vecpush(rayList.yList, float, moveEnt->pos[1]);
-            vecpush(rayList.xDirList, float, dir[0]);
-            vecpush(rayList.yDirList, float, dir[1]);
-
-
-            startTimer(shootTimer, 200);
-            printf("shooting \n");
-        }
-    }
 }
 
 
@@ -558,6 +577,36 @@ void set_sprite_angle_server()
     }
 }
 
+void check_pickup_collided()
+{
+    for(int e = 0; e < vecsize(vectorEntityList.movableList); e++)
+    {
+        if(!bm_getBitVal(vectorEntityList.bitmap.arr, e))
+            continue;
+
+        entityMove_t entMove = vecget(vectorEntityList.movableList, e);
+        entVec_t entPos = vecget(vectorEntityList.posList, e);
+        vec2add(entMove.rect, entMove.rect, entPos.pos);
+
+        for(int p = 0; p < vecsize(healthPickupList.posList); p++)
+        {
+            if(!bm_getBitVal(healthPickupList.bitmap.arr, p))
+                continue;
+
+            entVec_t pickupPos = vecget(healthPickupList.posList, p);
+            entRect_t pickupRect = vecget(healthPickupList.rectList, p);
+            vec2add(pickupRect.rect, pickupRect.rect, pickupPos.pos);
+
+            if(checkRectIntersect(pickupRect.rect, entMove.rect))
+            {
+                printf("entity picked up health: %d\n", p);
+                vecset(vectorEntityList.healthList, e, 100);
+                ent_setStateFlags(VECTOR_SERIALIZER, e, 3, 1);
+                ent_removePickup(&healthPickupList,p);
+            }
+        }
+    }
+}
 
 void check_move_func()
 {
@@ -568,10 +617,11 @@ void check_move_func()
             continue;
     
 
-        movableEntity_t *moveEnt = &vecget(vectorEntityList.movableList, i);
+        entityMove_t *moveEnt = &vecget(vectorEntityList.movableList, i);
+        entVec_t entPos = vecget(vectorEntityList.posList, i);
 
-        float xdiff = moveEnt->pos[0] - moveEnt->move.pos[0];
-        float ydiff = moveEnt->pos[1] - moveEnt->move.pos[1];
+        float xdiff = moveEnt->pos[0] - entPos.pos[0];
+        float ydiff = moveEnt->pos[1] - entPos.pos[1];
 
 
         if(ABS(xdiff) > 0)
@@ -589,18 +639,18 @@ void check_move_func()
 
 void set_physics_to_move()
 {
-    entityMove_t *entMove;
+    entityMove_t *phyMove;
     for(int i = 0; i < vecsize(vectorEntityList.movableList); i++)
     {
         if(!bm_getBitVal(vectorEntityList.bitmap.arr, i))
             continue;
 
         
-        movableEntity_t *moveEnt = &vecget(vectorEntityList.movableList, i);
+        entityMove_t *moveEnt = &vecget(vectorEntityList.movableList, i);
         int moveID = vecget(vectorEntityList.moveIDList, i);
-        entMove = physics_get(moveID);
+        phyMove = physics_get(moveID);
 
-        zmemcpy(&moveEnt->move, entMove, sizeof(entityMove_t));
+        zmemcpy(moveEnt, phyMove, sizeof(entityMove_t));
     }
 }
 
@@ -613,23 +663,35 @@ void set_pos_from_move()
             continue;
     
 
-        movableEntity_t *moveEnt = &vecget(vectorEntityList.movableList, i);
+        entVec_t *entPos = &vecget(vectorEntityList.posList, i);
+        entityMove_t *moveEnt = &vecget(vectorEntityList.movableList, i);
         // entitySprite_t *entSprite = &vecget(vectorEntityList.spriteList, i);
 
         animatedSprite_t *entSprite = &vecget(vectorEntityList.animSpriteList, i);
 
+        weaponOnHand_t *weaponOnHand = &vecget(vectorEntityList.weaponOnHandList, i);
+
+        // printf("entSprite: %f,%f \n", entSprite->pos[0], entSprite->pos[1]);
+
+        // int rayEntID = vecget(vectorEntityList.rayEntIDList, i);
+
+        // entityMove_t *rayEnt = &vecget(rayEntityList.entList, rayEntID);
+
+
         // if(moveEnt->move.dir[0] == 0 && moveEnt->move.dir[1] == 0 && moveEnt->move.dir[2] == 0)
         //     continue;
 
-        float dist = vec3dist(moveEnt->pos, moveEnt->move.pos);
+        float dist = vec3dist(entPos->pos, moveEnt->pos);
 
     
 
-        vec3set(moveEnt->pos, moveEnt->move.pos);
-        vec3set(moveEnt->move.dir, zeroVec);
+        vec3set(entPos->pos, moveEnt->pos);
+        vec3set(moveEnt->dir, zeroVec);
 
         vec3set(entSprite->pos, moveEnt->pos);
 
+        // vec3set(rayEnt->pos, moveEnt->pos);
+        ent_setRayWeaponEntity(&rayWeaponHandle, weaponOnHand, moveEnt);
     }
 }
 
@@ -640,7 +702,7 @@ void interpolate_pos()
     simTime -= 200;
     for(int e = 0; e < vecsize(vectorEntityList.movableList); e++)
     {
-        movableEntity_t *moveEnt = &vecget(vectorEntityList.movableList, e);
+        entVec_t *entPos = &vecget(vectorEntityList.posList, e);
         positionInterpolate_t *posIntp = &vecget(vectorEntityList.posInterpolateList, e);
         angleInterpolate_t *angIntp = &vecget(vectorEntityList.angleInterpolateList, e);
         animatedSprite_t *sprite = &vecget(vectorEntityList.animSpriteList, e);
@@ -720,22 +782,8 @@ void interpolate_pos()
         // }
 
 
-        moveEnt->pos[0] = intpVec[0];
-        moveEnt->pos[1] = intpVec[1];
-
-
-        
-        // printf("angle %f %f\n", sprite->angle, posIntp->angle[nextPos]);
-
-
-        // moveEnt->pos[0] = (prevX * a) + (nextX * (1 - a));
-        // moveEnt->pos[1] = (prevY * a) + (nextY * (1 - a));
-
-
-
-
-        // printf("checking a %f %f %f \n", ((float)(posIntp->timestamp[nextPos] - simTime)), func_absFloat((float)(posIntp->timestamp[nextPos] - posIntp->timestamp[lastPos])),  a);
-        // printf("move ent pos %f %f %f\n", prevX, nextX, a);
+        entPos->pos[0] = intpVec[0];
+        entPos->pos[1] = intpVec[1];
     }
 }
 
@@ -786,37 +834,34 @@ void interpolate_angle()
         }
 
 
-
-        float degAng = rad2deg(angIntp->angle[nextPos]);
-        float curAng = rad2deg(angIntp->angle[lastPos]);
-
-        // degAng = func_absFloat(degAng + 360);
-        if(degAng < 0) degAng = 360 + degAng;
-        if(curAng < 0) curAng = 360 + curAng;
-
-        int idegAng = (int)(degAng * 100);
-        int icurAng = (int)(curAng * 100);
+        float nextAng = rad2deg(angIntp->angle[nextPos]);
+        float lastAng = rad2deg(angIntp->angle[lastPos]);
 
 
-        // int angDiff = idegAng - icurAng;
+        if(nextAng < 0) nextAng = 360 + nextAng;
+        if(lastAng < 0) lastAng = 360 + lastAng;
+
+
         float a = ((float)(angIntp->timestamp[nextPos] - simTime))
             /func_absFloat((float)(angIntp->timestamp[nextPos] - angIntp->timestamp[lastPos]));
 
         
-        float diff = degAng - curAng;
+        float diff = nextAng - lastAng;
         int sig = SIGNUM(diff);
 
         
-        float diff2 = 360 - diff;
-        if(diff2 < diff) {
+        float diff2 = 360 - ABS(diff);
+        if(ABS(diff2) < ABS(diff)) {
             diff = -1 * sig * diff2;
         }
+        else {
+            diff2 = diff;
+        }
+        diff = diff2;
+        
 
-        float angToSet = curAng + diff * (1 - a);
+        float angToSet = lastAng + diff * (1 - a);
         sprite->angle = deg2rad(angToSet);
-        // sprite->angle = (curAng * a + (1-a) * degAng);
-        // float angToSet = (curAng * a + (1-a) * degAng);
-        printf("checking angle %f \n", angToSet);
     }
 }
 
@@ -828,13 +873,13 @@ void run_move_func()
 
     for(int e = 0; e < vecsize(vectorEntityList.movableList); e++)
     {
-        movableEntity_t *moveEnt = &vecget(vectorEntityList.movableList, e);
+        entityMove_t *moveEnt = &vecget(vectorEntityList.movableList, e);
     
         if(!bm_getBitVal(vectorEntityList.bitmap.arr, e))
             continue;
 
         
-        vec3set(vec3, moveEnt->move.dir);
+        vec3set(vec3, moveEnt->dir);
 
         // if(vec3[0] == 0 && vec3[1] == 0 && vec3[2] == 0)
         //     continue;
@@ -845,7 +890,7 @@ void run_move_func()
         // vec3add(moveEnt->move.pos, moveEnt->move.pos, vec3);
         // vec3set(moveEnt->move.dir, zeroVec);
 
-        vec3add(moveEnt->move.pos, moveEnt->move.pos, moveEnt->move.dir);
+        vec3add(moveEnt->pos, moveEnt->pos, moveEnt->dir);
 
 
         // printf("move dir %f %f %f \n", moveEnt->move.dir[0], moveEnt->move.dir[1], moveEnt->move.dir[2]);
@@ -853,20 +898,35 @@ void run_move_func()
     }
 }
 
+void add_pickup_sprite()
+{
+    entitySprite_t pickupSprite;
+    pickupSprite.texID = 0;
+    for(int i = 0; i < vecsize(healthPickupList.posList); i++)
+    {
+        if(!bm_getBitVal(healthPickupList.bitmap.arr, i))
+            continue;
+        
+        entVec_t pickupPos = vecget(healthPickupList.posList, i);
+        entRect_t pickupRect = vecget(healthPickupList.rectList, i);
+
+        vec3set(pickupSprite.pos, pickupPos.pos);
+        rect2set(pickupSprite.rect, pickupRect.rect);
+    
+        vecpush(entSpriteList.renderList, entitySprite_t, pickupSprite);
+    }
+}
 
 void add_sprite_for_render()
 {
     for(int e = 0; e < vecsize(vectorEntityList.animSpriteList); e++)
     {
-        // entitySprite_t *sprite = &vecget(vectorEntityList.spriteList, e);
         animatedSprite_t *sprite = &vecget(vectorEntityList.animSpriteList, e);
     
         if(!bm_getBitVal(vectorEntityList.bitmap.arr, e))
             continue;
         
 
-        // vecpushempty(entSpriteList.renderList, entitySprite_t);
-        // vecpush(entSpriteList.renderList, entitySprite_t, (*sprite));
         vecpush(animSpriteList.renderList, animatedSprite_t, (*sprite));
     }
 }
@@ -879,33 +939,134 @@ void set_move_from_pos()
             continue;
 
 
-        movableEntity_t *moveEnt = &vecget(vectorEntityList.movableList, e);
+        entVec_t *entPos = &vecget(vectorEntityList.posList, e);
+        entityMove_t *moveEnt = &vecget(vectorEntityList.movableList, e);
 
-        vec3set(moveEnt->move.pos, moveEnt->pos);
+        vec3set(moveEnt->pos, entPos->pos);
     }
+}
+
+void scan_killed_entities()
+{
+
+    int health;
+    for(int e = 0; e < vecsize(vectorEntityList.movableList); e++)
+    {
+        if(!bm_getBitVal(vectorEntityList.bitmap.arr, e))
+            continue;
+
+
+        health = vecget(vectorEntityList.healthList, e);
+
+        if(health < 0)
+        {
+            animatedSprite_t *sprite = &vecget(vectorEntityList.animSpriteList, e);
+            sprite->rect[2] /= 2;
+            sprite->rect[3] /= 2;
+            // vecset(vectorEntityList.healthList, e, 100);
+            // ent_removeVectorEntity(e);
+            // serv_removeSyncedEnt(e, VECTOR_SERIALIZER);
+
+            ent_addKillID(e);
+
+            printf("entity id %d \n", e);
+        }
+    }  
+}
+
+void kill_vector_entities()
+{
+    for(int i = 0; i < vecsize(killIDList.entIDList); i++)
+    {
+        int entID = vecget(killIDList.entIDList, i);
+        ent_removeVectorEntity(entID);
+        serv_removeSyncedEnt(entID, VECTOR_SERIALIZER);
+        printf("killed vector entity\n");
+    }
+}
+
+void set_actual_to_baseline()
+{
+    if(MAIN_ENT_ID == -1)  return;
+
+
+    entVec_t *entPos = &vecget(vectorEntityList.posList, MAIN_ENT_ID);
+    entityMove_t *moveEnt = &vecget(vectorEntityList.movableList, MAIN_ENT_ID);
+    animatedSprite_t *sprite = &vecget(vectorEntityList.animSpriteList, MAIN_ENT_ID);
+
+    vec3set(mainEntity.entPos.pos, entPos->pos);
+    // rect2set(mainEntity.movable.rect, moveEnt->rect);
+
+
+    vec3set(mainEntity.movable.pos, moveEnt->pos);
+    rect2set(mainEntity.movable.rect, moveEnt->rect);
+
+
+    vec3set(mainEntity.sprite.pos, entPos->pos);
+    rect2set(mainEntity.sprite.rect, moveEnt->rect);
+}
+
+void set_baseline_to_actual()
+{
+    if(MAIN_ENT_ID == -1) return;
+
+
+    entVec_t *entPos = &vecget(vectorEntityList.posList, MAIN_ENT_ID);
+    entityMove_t *moveEnt = &vecget(vectorEntityList.movableList, MAIN_ENT_ID);
+    animatedSprite_t *sprite = &vecget(vectorEntityList.animSpriteList, MAIN_ENT_ID);
+
+
+    vec3set(entPos->pos, mainEntity.entPos.pos);
+
+    
+    vec3set(moveEnt->pos, mainEntity.movable.pos);
+    rect2set(moveEnt->rect, mainEntity.movable.rect);
+    
+    vec3set(sprite->pos, mainEntity.sprite.pos);
 }
 
 void eng_processServerEntities()
 {
+    kill_vector_entities();
+
+    ent_resetKillList();
+
+    check_pickup_collided();
+
     set_move_from_pos();
 
 
     input_func_server();
 
-    // run_move_func();
+
     set_physics_movement();
 
 
     physics_run();
 
+
     set_physics_to_move();
+
 
     check_move_func();
 
-    set_pos_from_move();
 
+    set_pos_from_move();
+    
+
+    handle_ray_list(&rayWeaponHandle.rayHandleList);
+
+    handle_ray_hits();
+
+    ent_resetHitEntityList(&rayWeaponHandle.rayHandleList);
+
+    scan_killed_entities();
 
     set_sprite_angle_server();
+
+    // ent_resetRayList();
+
+    ent_resetRayWeapon(&rayWeaponHandle);
 
     // if(!checkTimer(&server.sendTimer)) {
     //     return;
@@ -913,27 +1074,6 @@ void eng_processServerEntities()
 
     // movableEntity_t *moveEnt = &vecget(vectorEntityList.movableList, 0);
     // printf("entity pos %f %f \n", moveEnt->pos[0], moveEnt->pos[1]);
-}
-
-
-void set_actual_to_baseline()
-{
-    if(MAIN_ENT_ID == -1)  return;
-
-
-    movableEntity_t *moveEnt = &vecget(vectorEntityList.movableList, MAIN_ENT_ID);
-    animatedSprite_t *sprite = &vecget(vectorEntityList.animSpriteList, MAIN_ENT_ID);
-
-    vec3set(mainEntity.movable.pos, moveEnt->pos);
-    rect2set(mainEntity.movable.bound, moveEnt->bound);
-
-
-    vec3set(mainEntity.movable.move.pos, moveEnt->move.pos);
-    rect2set(mainEntity.movable.move.rect, moveEnt->move.rect);
-
-
-    vec3set(mainEntity.sprite.pos, moveEnt->pos);
-    rect2set(mainEntity.sprite.rect, moveEnt->move.rect);
 }
 
 
@@ -945,8 +1085,9 @@ void eng_processClientEntities()
     
     set_move_from_pos();
 
-
+    printf("before input func client\n");
     input_func_client();
+    printf("after input func client \n");
 
 
     set_physics_movement();
@@ -954,7 +1095,7 @@ void eng_processClientEntities()
 
     physics_run();
 
-    // run_move_func();
+
     set_physics_to_move();
 
 
@@ -977,34 +1118,41 @@ void eng_processClientEntities()
     }
 
 
+    handle_ray_list(&rayWeaponHandle.rayHandleList);
 
-    handle_ray_list();
+
+    handle_ray_hits();
+
+
+    ent_resetHitEntityList(&rayWeaponHandle.rayHandleList);
 
 
     add_sprite_for_render();
 
 
+    add_pickup_sprite();
+
+
     add_ray_to_render();
 
 
-    // if(!checkTimer(&client.clRep.sendTimer))
-    //     return;
+    ent_resetRayWeapon(&rayWeaponHandle);
 
-    // movableEntity_t *moveEnt = &vecget(vectorEntityList.movableList, 0);
-    // printf("entity pos %f %f \n", moveEnt->pos[0], moveEnt->pos[1]);
 }
 
 
 int writeState(int entID, bitstream_t *bs, byte *bm, int conID)
 {
-    movableEntity_t *movEnt = &vecget(vectorEntityList.movableList, entID);
+    entVec_t *entPos = &vecget(vectorEntityList.posList, entID);
     animatedSprite_t *sprite = &vecget(vectorEntityList.animSpriteList, entID);
 
-    int xval = (int)(movEnt->pos[0] * 100);
-    int yval = (int)(movEnt->pos[1] * 100);
+    int health = vecget(vectorEntityList.healthList, entID);
+
+    int xval = (int)(entPos->pos[0] * 100);
+    int yval = (int)(entPos->pos[1] * 100);
     int ang = (int)(sprite->angle * 100);
 
-    for(int i = 0; i < 3; i++)
+    for(int i = 0; i < 4; i++)
     {
         if(bm_getBitVal(bm, i))
         {
@@ -1018,6 +1166,10 @@ int writeState(int entID, bitstream_t *bs, byte *bm, int conID)
                     break;
                 case 2:
                     stream_writeInt(bs, ang);
+                    break;
+                case 3:
+                    printf("writing health %d %d \n", health, conID);
+                    stream_writeInt(bs, health);
                     break;
             }
         }
@@ -1033,20 +1185,22 @@ int readState(int entID, bitstream_t *bs, byte *bm)
     int xval, yval, iang;
     int changePosFlag = 0;
     int changeAngleFlag = 0;
+    int health;
 
     xval = yval = 0;
     iang = 0;
+  
 
-    movableEntity_t *movEnt = &vecget(vectorEntityList.movableList, entID);
+    entVec_t *entPos = &vecget(vectorEntityList.posList, entID);
     positionInterpolate_t *posIntp = &vecget(vectorEntityList.posInterpolateList, entID);
     angleInterpolate_t *angIntp = &vecget(vectorEntityList.angleInterpolateList, entID);
     animatedSprite_t *sprite = &vecget(vectorEntityList.animSpriteList, entID);
 
-    float x = movEnt->pos[0], y = movEnt->pos[1];
+    float x = entPos->pos[0], y = entPos->pos[1];
     float ang = sprite->angle;
 
 
-    for(int i = 0; i < 3; i++)
+    for(int i = 0; i < 4; i++)
     {
         if(bm_getBitVal(bm, i))
         {
@@ -1055,23 +1209,26 @@ int readState(int entID, bitstream_t *bs, byte *bm)
                 case 0:
                     // printf("pressed yval\n");
                     yval = stream_readInt(bs);
-                    // movEnt->pos[1] = ((float)yval)/100.0;
                     y = ((float)yval)/100.0;
                     changePosFlag = 1;
-                    P_Y = movEnt->pos[1];
+                    P_Y = entPos->pos[1];
                     break;
                 case 1:
                     // printf("pressed xval\n");
                     xval = stream_readInt(bs);
-                    // movEnt->pos[0] = ((float)xval)/100.0;
                     x = ((float)xval)/100.0;
                     changePosFlag = 1;
-                    P_X = movEnt->pos[0];
+                    P_X = entPos->pos[0];
                     break;
                 case 2:
                     iang = stream_readInt(bs);
                     ang = ((float)iang)/100.0;
                     changeAngleFlag = 1;
+                    break;
+                case 3:
+                    health = stream_readInt(bs);
+                    printf("reading health %d\n", health);
+                    vecset(vectorEntityList.healthList, entID, health);
                     break;
             }
         }
@@ -1087,10 +1244,12 @@ int readState(int entID, bitstream_t *bs, byte *bm)
             posIntp->pos[last][1] = y;
             posIntp->timestamp[last] = getTimeMillis();
             posIntp->last++;
+
+            printf("position received: %f %f\n", x, y);
         }
         else {
-            movEnt->pos[0] = x;
-            movEnt->pos[1] = y;
+            entPos->pos[0] = x;
+            entPos->pos[1] = y;
         }
     }
 
@@ -1135,6 +1294,7 @@ int applyInitParam()
 }
 
 
+
 int writeInitParam(int entID, int conID, bitstream_t *bs)
 {
     int mainEnt = i2imap_get(vectorEntityList.mainEntMap, conID);
@@ -1170,6 +1330,38 @@ intPair_t ent_setupEntityForClient(int conID, netcon_t *con)
     return pair;
 }
 
+intPair_t ent_removeEntityFromClient(int conID, netcon_t *con)
+{
+    intPair_t pair;
+    int entID = i2imap_get(vectorEntityList.mainEntMap, conID);
+    ent_removeVectorEntity(entID);
+
+    i2imap_remove(vectorEntityList.mainEntMap, conID);
+
+    pair.a = entID;
+    pair.b = 0;
+
+    return pair;
+}
+
+void removeEntity(int entID)
+{
+    printf("removing entity : %d", entID);
+    ent_removeVectorEntity(entID);
+}
+
+void initPickupList()
+{
+    entVec_t posToSet;
+    entRect_t rectToSet;
+
+    vec3xyz(posToSet.pos, 380, 300, 0);
+    rect2xywh(rectToSet.rect,0,0,10,10);
+
+    ent_initPickupList(&healthPickupList);
+
+    ent_addPickup(&healthPickupList, posToSet, rectToSet);
+}
 
 void eng_initSerializerList()
 {
@@ -1178,12 +1370,13 @@ void eng_initSerializerList()
     
     ent_setSerializer(
         &list[0],
-        3,
+        4,
         readState,
         writeState,
         readInitParam,
         applyInitParam,
-        writeInitParam
+        writeInitParam,
+        removeEntity
     );
 
     entSerializerList.list = list;
@@ -1217,26 +1410,8 @@ void eng_init()
     ent_init();
 
     eng_initSerializerList();
-}
 
-
-void set_baseline_to_actual()
-{
-    if(MAIN_ENT_ID == -1) return;
-
-
-    movableEntity_t *moveEnt = &vecget(vectorEntityList.movableList, MAIN_ENT_ID);
-    // entitySprite_t *sprite = &vecget(vectorEntityList.spriteList, MAIN_ENT_ID);
-    animatedSprite_t *sprite = &vecget(vectorEntityList.animSpriteList, MAIN_ENT_ID);
-
-    vec3set(moveEnt->pos, mainEntity.movable.pos);
-    rect2set(moveEnt->bound, mainEntity.movable.bound);
-
-    
-    vec3set(moveEnt->move.pos, mainEntity.movable.move.pos);
-    rect2set(moveEnt->move.rect, mainEntity.movable.move.rect);
-    
-    vec3set(sprite->pos, mainEntity.sprite.pos);
+    initPickupList();
 }
 
 
@@ -1247,11 +1422,6 @@ void eng_afterRender()
 
     vecreset(entSpriteList.renderList);
     vecreset(animSpriteList.renderList);
-
-    vecreset(rayList.xList);
-    vecreset(rayList.yList);
-    vecreset(rayList.xDirList);
-    vecreset(rayList.yDirList);
 }
 
 
