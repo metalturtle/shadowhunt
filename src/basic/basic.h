@@ -311,6 +311,11 @@ extern void s2imap_remove(s2imap_t *smap, const char *key);
 #define vecset(v,i,val) (v).arr[(i)] = val
 #define vecsize(v) (v).size
 #define vecreset(v) (v).size = 0;
+#define vecfree(v) { \
+    zidfree((v).arr); \
+    (v).size = 0; \
+    (v).capacity = 0; \
+} \
 
 /********************CORE FUNCTIONS********************/
 

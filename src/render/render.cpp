@@ -35,6 +35,7 @@ void loadTexture(const char *path, textureImage_t *texImg, unsigned int *texName
     }
 
     glGenTextures(1,texName);
+    printf("checking texname %d \n", *texName);
     glBindTexture(GL_TEXTURE_2D, *texName);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
@@ -61,11 +62,112 @@ void loadAnimTexture(const char *path, textureImage_t *texImg, int row, int col,
     float width = texImg->width/col;
     float height = texImg->height/row;
 
-    int mipMapLevelCount = 1;
-    int layerCount = row * col;
-    glTexStorage3D(GL_TEXTURE_2D_ARRAY, mipMapLevelCount, GL_RGBA8, width, height, layerCount);
 
-    glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0, width, height, layerCount, GL_RGBA, GL_UNSIGNED_BYTE, texImg->data);
+    printf("checking width and height %f %f \n", width, height);
+
+    // width = 2;
+    // height = 2;
+    float layerCount = 1;
+    float mipLevelCount = 1;
+
+    // Read you texels here. In the current example, we have 2*2*2 = 8 texels, with each texel being 4 GLubytes.
+    // GLubyte texels[32] = 
+    // {
+    //     // Texels for first image.
+    //     0,   0,   0,   255,
+    //     255, 0,   0,   255,
+    //     0,   255, 0,   255, 
+    //     0,   0,   255, 255,
+    //     // Texels for second image.
+    //     255, 255, 255, 255,
+    //     255, 255,   0, 255,
+    //     0,   255, 255, 255,
+    //     255, 0,   255, 255,
+    // };
+    
+    // width = 45;
+    // height = 32;
+    // layerCount = 8;
+
+    float maxWidth = texImg->width;
+    float maxHeight = texImg->height;
+    layerCount = row * col;
+
+    unsigned char *pngData = (unsigned char *) zidmalloc(GENERALZONE, (int)(width * height * layerCount * 4.0));
+
+    unsigned char *curPngPtr = pngData;
+
+    for(int r = 0; r < row; r++)
+    {
+        for(int c = 0; c < col; c++)
+        {
+            int hoffset = r * height;
+            int woffset = c * width;
+    
+            for(int h = 0; h < (int)height; h++)
+            {
+                for(int w = 0; w < (int) width * 4; w++)
+                {
+                    curPngPtr[h * (int)width * 4 + w]
+                        = texImg->data[((h + hoffset) * (int)maxWidth * 4 + w + woffset * 4)];
+                }
+            }
+            if(c != col - 1)
+                curPngPtr = (curPngPtr + (int)(width * height * 4.0));
+        }
+        if(r != row - 1)
+            curPngPtr = (curPngPtr + (int)(width * height * 4.0));
+    }
+
+    // for(int i = 0; i < (int)(maxWidth * maxHeight * 4.0); i++)
+    // {
+    //     texImg->data[i] = pngData[i];
+    // }
+
+    // ((h + hoffset) * maxWidth + w + woffset)
+
+    // woffset = col * width
+    // hoffset = row * height
+    
+    // printf("checking max val: %d %d (%p, %p,%p)\n", counting, (int)(maxWidth * maxHeight * 4), pngData, curPngPtr, pngData + (int)(maxWidth * maxHeight * 4));
+
+    // for(int l = 0; l < layerCount; l++)
+    // {
+    //     for(int i = 0; i < (int)height; i++)
+    //     {
+    //         for(int j = 0; j < (int)width * 4; j++)
+    //         {
+    //             curPngPtr[(i * (int)width) * 4 + j] = texImg->data[(i * ((int)maxWidth * 4)) + j];
+    //             // printf("checking bytes %u \n", pngData[i * (int)width + j]);
+    //         }
+    //     }
+
+    // }
+
+
+    // for(int i = 0; i < (int)(width * height * 4); i++)
+    // {
+    //     pngData[i] = texImg->data[i];
+    // }
+
+    // int mipLevelCount = 1;
+    // int layerCount = row * col;
+    printf("layer row count: %f %f %f \n", 2.0, 2.0, layerCount);
+    glTexStorage3D(GL_TEXTURE_2D_ARRAY, mipLevelCount, GL_RGBA8, width, height, layerCount);
+
+    // glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, 
+    //          tileW, tileH, imageCount, 0,
+    //          this->Image_Format, GL_UNSIGNED_BYTE, nullptr);
+
+    glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0, width, height, layerCount, GL_RGBA, GL_UNSIGNED_BYTE, 
+    // texImg->data
+    // texels
+    pngData
+    );
+
+    // glTexStorage3D(GL_TEXTURE_2D_ARRAY, mipLevelCount, GL_RGBA8, width, height, layerCount);
+    // glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0, width, height, layerCount, GL_RGBA, GL_UNSIGNED_BYTE, texels);
+
 
     // glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     // glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -76,6 +178,7 @@ void loadAnimTexture(const char *path, textureImage_t *texImg, int row, int col,
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    printf("created anim texture\n");
 }
 
 int createVertexShader(const char *fileName)
@@ -493,13 +596,23 @@ void initSprites(int isClient)
         AnimSpriteHandle.animSpriteList[i].col = col;
         AnimSpriteHandle.animSpriteList[i].total = row * col;
 
+
         if(isClient)
         {
+                // glTexImage2D(GL_TEXTURE_2D, 0, colval, texImg->width,
+                //  texImg->height, 0, colval, GL_UNSIGNED_BYTE, texImg->data);
+
+            // loadTexture(spriteFilePath, &SpriteHandle.texImgList[i], &SpriteHandle.texNameList[i]);
+            // loadTexture(spriteFilePath, &AnimSpriteHandle.animSpriteList[i].texImage, &AnimSpriteHandle.animSpriteList[i].texName);
+            // row = 1;
+            // col = 2;
+            printf("anim rowcol: %d %d \n", row, col);
             loadAnimTexture(spriteFilePath, &AnimSpriteHandle.animSpriteList[i].texImage, row, col, &AnimSpriteHandle.animSpriteList[i].texName);
         }
 
         sprite_add(spriteObjName, i, SPRITE_TYPE_ANIM);
 
+        printf("\n\n");
         i++;
     }
 
@@ -559,6 +672,9 @@ void drawSprite(int spriteID, float x, float y, float rect[4], float angle)
     unsigned int transformLoc = glGetUniformLocation(shaderProgram, "transform");
     glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
 
+    // if(spriteID == 2)
+    //     printf("rendering red sprite %d \n", texName);
+
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texName);
     glBindVertexArray(VAO);
@@ -581,32 +697,52 @@ void drawAnimSprite(animatedSprite_t *entSprite)
 
     float x = entSprite->pos[0];
     float y = entSprite->pos[1];
+    float rx = entSprite->rect[0];
+    float ry = entSprite->rect[1];
     float w = entSprite->rect[2]/cellsize;
     float h = entSprite->rect[3]/cellsize;
+    float angle = entSprite->angle;
 
     glm::mat4 trans = glm::mat4(1.0f);
     trans = glm::ortho(0.0f, swidth / cellsize, 0.0f, sheight / cellsize, -10.0f, 100.0f);
     trans = glm::translate(trans, glm::vec3(-camera.window[0] + x, -camera.window[1] + y, 0.0f));
+    trans = glm::rotate(trans, angle, glm::vec3(0.0f, 0.0f, 1.0f));
+    trans = glm::translate(trans, glm::vec3(rx, ry, 0.0f)); 
     trans = glm::scale(trans, glm::vec3(w, h, 1.0f));
     
+
+    // printf("anim texID: %d \n", entSprite->texID);
+    // glUseProgram(shaderProgram);
+
+    // unsigned int transformLoc = glGetUniformLocation(shaderProgram, "transform");
+    // glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
+
+
+    // printf("rendering anim sprite %d \n", texName);
+    // glActiveTexture(GL_TEXTURE0);
+    // glBindTexture(GL_TEXTURE_2D, texName);
+    // glBindVertexArray(VAO);
+    // glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
+
     glUseProgram(shaderProgram);
 
     unsigned int transformLoc = glGetUniformLocation(shaderProgram, "transform");
     glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
 
-    float curLayer = entSprite->curSprite*animSpriteImage->total;
+    // float curLayer = entSprite->curSprite * animSpriteImage->total;
+    float curLayer = entSprite->curSprite * 8;
+    // printf("curLayer: %f %f %f \n", curLayer, animSpriteImage->total);
     glUniform1f(glGetUniformLocation(shaderProgram, "currentLayer"), curLayer);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D_ARRAY, texName);
     glBindVertexArray(VAO);
     glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
-
 }
 
 int render()
 {
-    float col = 0.1f;
+    float col = 0.1;
     entitySprite_t *entSprite;
     animatedSprite_t *animSprite;
     rect2_t bound;
@@ -623,13 +759,13 @@ int render()
     // shaderProgram = vecget(GraphicsHandle.shaderProgramList, 0);
     // glUseProgram(shaderProgram);
 
-    for(int i = 0; i < TexRegHandle.texRegCount; i++)
-    {
-        if(checkRectIntersect(TexRegHandle.texRegList[i].area, GraphicsHandle.camera.window))
-        {
-            drawRect(i);
-        }
-    }
+    // for(int i = 0; i < TexRegHandle.texRegCount; i++)
+    // {
+    //     if(checkRectIntersect(TexRegHandle.texRegList[i].area, GraphicsHandle.camera.window))
+    //     {
+    //         drawRect(i);
+    //     }
+    // }
 
     for(int i = 0; i < vecsize(entSpriteList.renderList); i++)
     {
@@ -662,12 +798,12 @@ int render()
     {
         animSprite = &vecget(animSpriteList.renderList, i);
 
-
-        drawSprite(animSprite->texID,
-                animSprite->pos[0], animSprite->pos[1],
-                animSprite->rect,
-                animSprite->angle
-                );
+        drawAnimSprite(animSprite);
+        // drawSprite(animSprite->texID,
+        //         animSprite->pos[0], animSprite->pos[1],
+        //         animSprite->rect,
+        //         animSprite->angle
+        //         );
     }
 
     

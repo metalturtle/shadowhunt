@@ -84,7 +84,7 @@ extern void streamQuick_readPacket(quickStreamRecord_t *quickRecord, bitstream_t
 extern void streamQuick_acknowledge(quickStreamRecord_t *quickRecord, netcon_t *con);
 extern void streamQuick_addPayload(quickStreamRecord_t *quickRecord, void *data);
 extern int streamQuick_readCount(quickStreamRecord_t *quickRecord, bitstream_t *bs);
-
+extern void streamQuick_close(quickStreamRecord_t *quickRecord);
 
 extern void streamReliable_init(relStreamRecord_t *relRecord, int (*readFunc)(bitstream_t *), int (*writeFunc)(bitstream_t *));
 extern int streamReliable_callWriteFunc(relStreamRecord_t *relRecord, netcon_t *con);

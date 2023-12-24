@@ -14,6 +14,9 @@ byte keyMap[256];
 
 struct inputCmdConfig_st inpCmdConfig;
 pickupList_t healthPickupList;
+pickupList_t weaponPickupList;
+
+endTimer_t pickupSpawnTimer;
 
 #define ENTCHILD_SIZE 3
 #define ENTCHILD_SERIALIZE 0
@@ -21,6 +24,8 @@ pickupList_t healthPickupList;
 #define ENTCHILD_MOVE 2
 
 #define VECTOR_SERIALIZER 0
+#define PICKUP_SERIALIZER 1
+#define WEAPON_PICKUP_SERIALIZER 2
 
 #define VECENT_SPEED 1
 
@@ -406,7 +411,7 @@ void add_ray_to_render()
     }
 }
 
-void input_func_common(int entID, inputCommandList_t *inpCmdList, entityMove_t *moveEnt)
+void input_func_common(int entID, inputCommandList_t *inpCmdList, entityMove_t *moveEnt, int server)
 {
     inputCommand_t *inpCmd;
     int inpLen;
@@ -457,6 +462,11 @@ void input_func_common(int entID, inputCommandList_t *inpCmdList, entityMove_t *
 
             weaponOnHand_t *weaponOnHand = &vecget(vectorEntityList.weaponOnHandList, entID);
             ent_handleRayWeaponShoot(&rayWeaponHandle, entID, weaponOnHand, moveEnt->pos, angle);
+
+            if(server)
+            {
+                ent_setStateFlags(VECTOR_SERIALIZER, entID, 5, 1);
+            }
         }
     }
 }
@@ -476,7 +486,7 @@ void input_func_server()
 
         int entID = i2imap_get(vectorEntityList.mainEntMap, i);
         entityMove_t *moveEnt = &vecget(vectorEntityList.movableList, entID);
-        input_func_common(entID, inpCmdList, moveEnt);
+        input_func_common(entID, inpCmdList, moveEnt, 1);
     }
 }
 
@@ -487,10 +497,48 @@ void input_func_client()
     inpCmdList = &vecget(cl_inputList.list, 0);
     
     entityMove_t *moveEnt = &vecget(vectorEntityList.movableList, MAIN_ENT_ID);
-    input_func_common(MAIN_ENT_ID, inpCmdList, moveEnt);
-    printf("input func common \n");
+    input_func_common(MAIN_ENT_ID, inpCmdList, moveEnt, 0);
 }
 
+// void handleWeaponShootStatus()
+// {
+//     for(int i = 0; i < vecsize(vectorEntityList.weaponShotList); i++)
+//     {
+//         if(!bm_getBitVal(vectorEntityList.bitmap.arr, i))
+//         {
+//             continue;
+//         }
+//         if(vecget(vectorEntityList.weaponShotList, i) == 0)
+//         {
+//             continue;
+//         }
+
+//         endTimer_t *shootTimer = &vecget(vectorEntityList.shootTimerList, i);
+//         // float angle = vecget(vectorEntityList.
+
+//         mouseXY[0] = inpCmd->mouseX - 0.5;
+//         mouseXY[1] = inpCmd->mouseY - 0.5;
+//         angle = vec3getang2(mouseXY);
+
+
+//         weaponOnHand_t *weaponOnHand = &vecget(vectorEntityList.weaponOnHandList, entID);
+//         ent_handleRayWeaponShoot(&rayWeaponHandle, entID, weaponOnHand, moveEnt->pos, angle);
+//     }
+// }
+void clearWeaponShootStatus()
+{
+    inputCommandList_t *inpCmdList;
+
+    for(int i = 0; i < vecsize(server.clRepList); i++)
+    {
+        if(!bm_getBitVal(server.clRepBitMap.arr, i))
+            continue;
+
+        
+        int entID = i2imap_get(vectorEntityList.mainEntMap, i);
+        vecset(vectorEntityList.weaponShotList, entID, 0);
+    }
+}
 
 void set_physics_movement()
 {
@@ -577,6 +625,39 @@ void set_sprite_angle_server()
     }
 }
 
+void check_weapon_pickup_collided()
+{
+    for(int e = 0; e < vecsize(vectorEntityList.movableList); e++)
+    {
+        if(!bm_getBitVal(vectorEntityList.bitmap.arr, e))
+            continue;
+
+        entityMove_t entMove = vecget(vectorEntityList.movableList, e);
+        entVec_t entPos = vecget(vectorEntityList.posList, e);
+        vec2add(entMove.rect, entMove.rect, entPos.pos);
+
+        for(int p = 0; p < vecsize(weaponPickupList.posList); p++)
+        {
+            if(!bm_getBitVal(weaponPickupList.bitmap.arr, p))
+                continue;
+
+            entVec_t pickupPos = vecget(weaponPickupList.posList, p);
+            entRect_t pickupRect = vecget(weaponPickupList.rectList, p);
+            vec2add(pickupRect.rect, pickupRect.rect, pickupPos.pos);
+
+            if(checkRectIntersect(pickupRect.rect, entMove.rect))
+            {
+                printf("entity picked up weapon: %d\n", p);
+                weaponOnHand_t *weapHandle = &vecget(vectorEntityList.weaponOnHandList, e);
+                weapHandle->ammoCount += 10;
+                ent_setStateFlags(VECTOR_SERIALIZER, e, 4, 1);
+                ent_removePickup(&weaponPickupList,p);
+                serv_removeSyncedEnt(p, WEAPON_PICKUP_SERIALIZER);
+            }
+        }
+    }
+}
+
 void check_pickup_collided()
 {
     for(int e = 0; e < vecsize(vectorEntityList.movableList); e++)
@@ -603,6 +684,7 @@ void check_pickup_collided()
                 vecset(vectorEntityList.healthList, e, 100);
                 ent_setStateFlags(VECTOR_SERIALIZER, e, 3, 1);
                 ent_removePickup(&healthPickupList,p);
+                serv_removeSyncedEnt(p, PICKUP_SERIALIZER);
             }
         }
     }
@@ -681,9 +763,18 @@ void set_pos_from_move()
         // if(moveEnt->move.dir[0] == 0 && moveEnt->move.dir[1] == 0 && moveEnt->move.dir[2] == 0)
         //     continue;
 
+        // entSprite->texID = 2;
         float dist = vec3dist(entPos->pos, moveEnt->pos);
 
-    
+        if(dist > 0) {
+            float fsprite = (entSprite->curSprite + 0.02) * 10000.0;
+            int curSprite = (int)(fsprite);
+            curSprite = curSprite % 10000;
+            // printf("setting cur sprite %d %f\n", curSprite, entSprite->curSprite);
+            entSprite->curSprite = ((float)curSprite)/10000.0;
+            // printf("checking cursprite %f \n", entSprite->curSprite);
+        }
+
 
         vec3set(entPos->pos, moveEnt->pos);
         vec3set(moveEnt->dir, zeroVec);
@@ -915,6 +1006,21 @@ void add_pickup_sprite()
     
         vecpush(entSpriteList.renderList, entitySprite_t, pickupSprite);
     }
+
+    pickupSprite.texID = 1;
+    for(int i = 0; i < vecsize(weaponPickupList.posList); i++)
+    {
+        if(!bm_getBitVal(weaponPickupList.bitmap.arr, i))
+            continue;
+
+        entVec_t pickupPos = vecget(weaponPickupList.posList, i);
+        entRect_t pickupRect = vecget(weaponPickupList.rectList, i);
+
+        vec3set(pickupSprite.pos, pickupPos.pos);
+        rect2set(pickupSprite.rect, pickupRect.rect);
+    
+        vecpush(entSpriteList.renderList, entitySprite_t, pickupSprite);
+    }
 }
 
 void add_sprite_for_render()
@@ -1025,13 +1131,106 @@ void set_baseline_to_actual()
     vec3set(sprite->pos, mainEntity.sprite.pos);
 }
 
+
+void set_camera()
+{
+    if(MAIN_ENT_ID == -1)
+        return;
+
+    float temp;
+    float mouseXY[3];
+    float mouseDist[3];
+    float camPos[3];
+    float diff[] = {-30, -30};
+    inputCommand_t *inpCmd;
+
+    inputCommandList_t *inpCmdList = &vecget(cl_inputList.list, 0);
+
+    int inpLen = inpCmd_getLen(inpCmdList);
+
+    inpCmd = inpCmd_get(inpCmdList, inpLen);
+
+    float *mainEntPos = (vecget(vectorEntityList.movableList, MAIN_ENT_ID)).pos;
+
+
+    mouseDist[0] = inpCmd->mouseX;
+    mouseDist[1] = inpCmd->mouseY;
+    mouseDist[2] = 0;
+    vec3unitvec(mouseDist, temp);
+    vec3mult(mouseDist, 7);
+
+    vec2add(mouseDist, mouseDist, mainEntPos);
+    vec2sub(mouseDist, mouseDist, worldCamera.window);
+    // printf("window pos %f,%f \n", worldCamera.window[0], worldCamera.window[1]);
+
+    float distance = vec2length(mouseDist);
+    float curSpeed = 0;
+
+    // printf("distance calc: %f \n", distance);
+
+    if(distance < 1) {
+        curSpeed = 0;
+    }
+    else if (distance < 10) {
+        curSpeed = distance/10;
+    }
+    else if (distance < 100)
+    {
+        curSpeed = 5;
+    }
+    else {
+        rect2xywh(worldCamera.window, diff[0], diff[1], getScreenWidth(), getScreenHeight());
+        vec2add(worldCamera.window, worldCamera.window, mainEntPos); 
+        return;
+    }
+
+    vec3mult(mouseDist, curSpeed/distance);
+
+    rect2xywh(worldCamera.window, diff[0], diff[1], getScreenWidth(), getScreenHeight());
+    vec2add(worldCamera.window, worldCamera.window, mainEntPos);
+    vec2add(worldCamera.window, worldCamera.window, mouseDist);
+    // mouseXY[0] = inpCmd->mouseX - 0.5;
+    // mouseXY[1] = inpCmd->mouseY - 0.5;
+    // mouseXY[2] = 0;
+    // float angle = vec3getang2(mouseXY);
+
+    set_sprite_angle(MAIN_ENT_ID, 0);  
+}
+
+
+void add_health_pickup()
+{
+    entVec_t posToSet;
+    entRect_t rectToSet;
+
+    if(checkTimer(&pickupSpawnTimer))
+    {
+        vec3xyz(posToSet.pos, 380, 300, 0);
+        rect2xywh(rectToSet.rect,0,0,10,10);
+
+
+        printf("added pickup \n");
+        // ent_addPickup(&healthPickupList, posToSet, rectToSet);
+        // serv_addSyncedEnt(0, PICKUP_SERIALIZER);
+        startTimer(&pickupSpawnTimer, 1000 * 60 * 60 * 24);
+
+        ent_addPickup(&weaponPickupList, posToSet, rectToSet);
+        serv_addSyncedEnt(0, WEAPON_PICKUP_SERIALIZER);
+    }
+}
+
 void eng_processServerEntities()
 {
     kill_vector_entities();
 
     ent_resetKillList();
 
+
+    check_weapon_pickup_collided();
+
     check_pickup_collided();
+
+    add_health_pickup();
 
     set_move_from_pos();
 
@@ -1068,12 +1267,6 @@ void eng_processServerEntities()
 
     ent_resetRayWeapon(&rayWeaponHandle);
 
-    // if(!checkTimer(&server.sendTimer)) {
-    //     return;
-    // }
-
-    // movableEntity_t *moveEnt = &vecget(vectorEntityList.movableList, 0);
-    // printf("entity pos %f %f \n", moveEnt->pos[0], moveEnt->pos[1]);
 }
 
 
@@ -1085,9 +1278,8 @@ void eng_processClientEntities()
     
     set_move_from_pos();
 
-    printf("before input func client\n");
+
     input_func_client();
-    printf("after input func client \n");
 
 
     set_physics_movement();
@@ -1108,14 +1300,7 @@ void eng_processClientEntities()
     interpolate_angle();
 
 
-    if(MAIN_ENT_ID != -1) {
-        float *pos = (vecget(vectorEntityList.movableList, MAIN_ENT_ID)).pos;
-        float diff[] = {-30, -30};
-        rect2xywh(worldCamera.window, diff[0], diff[1], getScreenWidth(), getScreenHeight());
-        vec2add(worldCamera.window, worldCamera.window, pos);
-
-        set_sprite_angle(MAIN_ENT_ID, 0);
-    }
+    set_camera();
 
 
     handle_ray_list(&rayWeaponHandle.rayHandleList);
@@ -1145,14 +1330,16 @@ int writeState(int entID, bitstream_t *bs, byte *bm, int conID)
 {
     entVec_t *entPos = &vecget(vectorEntityList.posList, entID);
     animatedSprite_t *sprite = &vecget(vectorEntityList.animSpriteList, entID);
+    weaponOnHand_t *weapOnHand = &vecget(vectorEntityList.weaponOnHandList, entID);
 
     int health = vecget(vectorEntityList.healthList, entID);
 
     int xval = (int)(entPos->pos[0] * 100);
     int yval = (int)(entPos->pos[1] * 100);
     int ang = (int)(sprite->angle * 100);
+    int ammoCount = weapOnHand->ammoCount;
 
-    for(int i = 0; i < 4; i++)
+    for(int i = 0; i < 6; i++)
     {
         if(bm_getBitVal(bm, i))
         {
@@ -1171,6 +1358,15 @@ int writeState(int entID, bitstream_t *bs, byte *bm, int conID)
                     printf("writing health %d %d \n", health, conID);
                     stream_writeInt(bs, health);
                     break;
+                case 4:
+                    printf("writing ammo count %d \n", ammoCount);
+                    stream_writeInt(bs, ammoCount);
+                    break;
+                case 5:
+                    printf("writing state for the entity %d \n", entID);
+                    // stream_writeInt(bs, 1);
+                    stream_writeInt(bs, ang);
+                    break;
             }
         }
     }
@@ -1185,7 +1381,8 @@ int readState(int entID, bitstream_t *bs, byte *bm)
     int xval, yval, iang;
     int changePosFlag = 0;
     int changeAngleFlag = 0;
-    int health;
+    int health, ammoCount;
+    int weapShoot = 0;
 
     xval = yval = 0;
     iang = 0;
@@ -1195,12 +1392,13 @@ int readState(int entID, bitstream_t *bs, byte *bm)
     positionInterpolate_t *posIntp = &vecget(vectorEntityList.posInterpolateList, entID);
     angleInterpolate_t *angIntp = &vecget(vectorEntityList.angleInterpolateList, entID);
     animatedSprite_t *sprite = &vecget(vectorEntityList.animSpriteList, entID);
+    weaponOnHand_t *weapOnHand = &vecget(vectorEntityList.weaponOnHandList, entID);
 
     float x = entPos->pos[0], y = entPos->pos[1];
     float ang = sprite->angle;
 
 
-    for(int i = 0; i < 4; i++)
+    for(int i = 0; i < 6; i++)
     {
         if(bm_getBitVal(bm, i))
         {
@@ -1229,6 +1427,18 @@ int readState(int entID, bitstream_t *bs, byte *bm)
                     health = stream_readInt(bs);
                     printf("reading health %d\n", health);
                     vecset(vectorEntityList.healthList, entID, health);
+                    break;
+                case 4:
+                    ammoCount = stream_readInt(bs);
+                    weapOnHand->ammoCount = ammoCount;
+                    printf("reading ammocount %d \n", ammoCount);
+                    break;
+                case 5:
+                    printf("reading state for entity %d \n", entID);
+                    // vecset(vectorEntityList.weaponShotList, entID, 1);
+                    iang = stream_readInt(bs);
+                    ang = ((float)iang)/100.0;
+                    ent_handleRayWeaponShoot(&rayWeaponHandle, entID, weapOnHand, entPos->pos, ang);
                     break;
             }
         }
@@ -1269,6 +1479,47 @@ int readState(int entID, bitstream_t *bs, byte *bm)
     return 0;
 }
 
+int writePickupState(int entID, bitstream_t *bs, byte *bm, int conID)
+{
+    // for(int i = 0; i < 0; i++)
+    // {
+    //     if(bm_getBitVal(bm, i))
+    //     {
+    //         switch(i)
+    //         {
+    //             case 0:
+    //                 stream_writeBit(bs, 1);
+    //                 break;
+    //         }
+    //     }
+    // }
+
+    return 0;
+}
+
+int readPickupState(int entID, bitstream_t *bs, byte *bm)
+{
+
+    // int pickupState = 1;
+    // for(int i = 0; i < 1; i++)
+    // {
+    //     if(bm_getBitVal(bm, i))
+    //     {
+    //         switch(i)
+    //         {
+    //             case 0:
+    //                 // printf("pressed yval\n");
+    //                 pickupState = stream_readByte(bs);
+    //                 break;
+    //         }
+    //     }
+    // }
+
+    // pickupState = 1 ^ pickupState;
+    // bm_setBitVal(healthPickupList.bitmap.arr, entID, pickupState);
+
+    return 0;
+}
 
 int isMainEnt;
 int readInitParam(bitstream_t *bs)
@@ -1294,7 +1545,6 @@ int applyInitParam()
 }
 
 
-
 int writeInitParam(int entID, int conID, bitstream_t *bs)
 {
     int mainEnt = i2imap_get(vectorEntityList.mainEntMap, conID);
@@ -1314,6 +1564,64 @@ int writeInitParam(int entID, int conID, bitstream_t *bs)
     return 0;
 }
 
+entVec_t pickupPosToSet;
+
+int readPickupInitParam(bitstream_t *bs)
+{
+    pickupPosToSet.pos[0] = (float)(stream_readInt(bs))/100.0;
+    pickupPosToSet.pos[1] = (float)(stream_readInt(bs))/100.0;
+    return 0;
+}
+
+
+int applyPickupInitParam()
+{
+    entRect_t rectToSet;
+    rect2xywh(rectToSet.rect,0,0,10,10);
+    ent_addPickup(&healthPickupList, pickupPosToSet, rectToSet);
+    return 0;
+}
+
+
+int writePickupInitParam(int entID, int conID, bitstream_t *bs)
+{
+    entVec_t posVec = vecget(healthPickupList.posList, entID);
+    int x = (posVec.pos[0] * 100.0);
+    int y = (posVec.pos[1] * 100.0);
+    stream_writeInt(bs, x);
+    stream_writeInt(bs, y);
+    return 0;
+}
+
+
+entVec_t weapPickupPos;
+
+int readWeapPickupInitParam(bitstream_t *bs)
+{
+    weapPickupPos.pos[0] = (float)(stream_readInt(bs))/100.0;
+    weapPickupPos.pos[1] = (float)(stream_readInt(bs))/100.0;
+    return 0;
+}
+
+
+int applyWeapPickupInitParam()
+{
+    entRect_t rectToSet;
+    rect2xywh(rectToSet.rect,0,0,10,10);
+    ent_addPickup(&weaponPickupList, weapPickupPos, rectToSet);
+    return 0;
+}
+
+
+int writeWeapPickupInitParam(int entID, int conID, bitstream_t *bs)
+{
+    entVec_t posVec = vecget(weaponPickupList.posList, entID);
+    int x = (posVec.pos[0] * 100.0);
+    int y = (posVec.pos[1] * 100.0);
+    stream_writeInt(bs, x);
+    stream_writeInt(bs, y);
+    return 0;
+}
 
 intPair_t ent_setupEntityForClient(int conID, netcon_t *con)
 {
@@ -1350,27 +1658,34 @@ void removeEntity(int entID)
     ent_removeVectorEntity(entID);
 }
 
+void removePickupEntity(int entID)
+{
+    ent_removePickup(&healthPickupList, entID);
+}
+
 void initPickupList()
 {
-    entVec_t posToSet;
-    entRect_t rectToSet;
-
-    vec3xyz(posToSet.pos, 380, 300, 0);
-    rect2xywh(rectToSet.rect,0,0,10,10);
-
     ent_initPickupList(&healthPickupList);
+}
 
-    ent_addPickup(&healthPickupList, posToSet, rectToSet);
+void removeWeapPickup(int entID)
+{
+    ent_removePickup(&weaponPickupList, entID);
+}
+
+void initWeaponPickupList()
+{
+    ent_initPickupList(&weaponPickupList);
 }
 
 void eng_initSerializerList()
 {
     entitySerializer_t *list = (entitySerializer_t *)
-        zidmalloc(GENERALZONE, sizeof(entitySerializer_t) * 1);
+        zidmalloc(GENERALZONE, sizeof(entitySerializer_t) * 3);
     
     ent_setSerializer(
         &list[0],
-        4,
+        6,
         readState,
         writeState,
         readInitParam,
@@ -1379,8 +1694,32 @@ void eng_initSerializerList()
         removeEntity
     );
 
+
+    ent_setSerializer(
+        &list[1],
+        1,
+        readPickupState,
+        writePickupState,
+        readPickupInitParam,
+        applyPickupInitParam,
+        writePickupInitParam,
+        removePickupEntity
+    );
+
+
+    ent_setSerializer(
+        &list[2],
+        1,
+        readPickupState,
+        writePickupState,
+        readWeapPickupInitParam,
+        applyWeapPickupInitParam,
+        writeWeapPickupInitParam,
+        removeWeapPickup
+    );
+
     entSerializerList.list = list;
-    entSerializerList.length = 1;
+    entSerializerList.length = 3;
 }
 
 
@@ -1412,6 +1751,10 @@ void eng_init()
     eng_initSerializerList();
 
     initPickupList();
+
+    initWeaponPickupList();
+
+    startTimer(&pickupSpawnTimer, 5000);
 }
 
 

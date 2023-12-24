@@ -26,6 +26,9 @@ killIDList_t killIDList;
 // rayHandleList_t rayHandleList;
 rayWeaponHandle_t rayWeaponHandle;
 
+float shootAngleList[8] = {0, -1,3, -5, 4, 2, -1, -2};
+int shootAngListLen = 8;
+
 /********************ENTITY********************/
 
 void ent_initEntList()
@@ -86,6 +89,15 @@ void ent_initClientEntList(int conID, clientEntityRecordList_t *clEntRecordList)
     streamQuick_init(&clEntRecordList->removeEntRecord, NULL, NULL);
 }
 
+
+void ent_freeClientEntList(int conID, clientEntityRecordList_t *clEntRecordList)
+{
+    vecfree(clEntRecordList->recordList);
+    vecfree(clEntRecordList->bitmap);
+
+    streamQuick_close(&clEntRecordList->newEntRecord);
+    streamQuick_close(&clEntRecordList->removeEntRecord);
+}
 
 // initializes the entity serializer
 void ent_setSerializer(
@@ -193,15 +205,12 @@ void ent_readNewEntList(
     int recordCount = streamQuick_readCount(&clEntList->newEntRecord, bs);
 
 
-    printf("read new ent list %d\n", recordCount);
     for(int i = 0; i < recordCount; i++)
     {
         // get the server entity id
         int remoteEntID = stream_readInt(bs);
 
-        // printf("remote ent id %d \n", remoteEntID);
 
-        printf("before read param %d \n", remoteEntID);
         entSerializer->readInitParam(bs);
 
 
@@ -211,14 +220,12 @@ void ent_readNewEntList(
         if(clientEntID != -1)
             continue;
     
-        printf("client ent ID: %d \n", clientEntID);
         
         clientEntID = entSerializer->applyInitParam(clientEntID);
 
         // call the function of the serializer that reads initialization
         // params and creates entities
 
-        printf("client ent ID after creation: %d \n", clientEntID);
 
         // if no entities are created then skip
         if(clientEntID < 0)
@@ -314,7 +321,6 @@ void ent_writeRemoveEntList(int conID, entitySerializer_t *entSerializer, netcon
     stream_writeByte(bs, ENTCMD_REMOVE);
 
     // write the stored list of new entities and their initialization params
-    // streamQuick_writePacket(&clEntList->newEntRecord, bs, con);
     streamQuick_writePacket(&clEntList->removeEntRecord, bs, con);
 }
 
@@ -531,7 +537,6 @@ void ent_handleClientJoin(int conID, netcon_t *con)
             vecpush(entSerialize->clientBitmap, byte, 0);
             vecpushempty(entSerialize->clientRecordList, clientEntityRecordList_t);
             vecpushempty(entSerialize->entityStateList, entityStateBitmap_t);
-            printf("pushed entity state %p \n", vecget(entSerialize->entityStateList, id));
         }
 
 
@@ -564,7 +569,6 @@ void ent_handleClientJoin(int conID, netcon_t *con)
         }
 
 
-        printf("entity state list size %d \n", vecsize(entSerialize->entityStateList));
         for(int j = 0; j < vecsize(entSerialize->entityStateList); j++)
         {
             if(!bm_getBitVal(entSerialize->entityBitmap.arr, j)) {
@@ -572,13 +576,14 @@ void ent_handleClientJoin(int conID, netcon_t *con)
             }
 
 
-            printf("adding enitity %d \n", j);
-
+            int entRecID = vecsize(clEntRecordList->recordList);
             vecpushempty(clEntRecordList->recordList, entityRecord_t);
-            bm_setBitVal(clEntRecordList->bitmap.arr, vecsize(clEntRecordList->recordList) - 1, 1);
 
 
-            entityRecord_t *entRecord = &vecget(clEntRecordList->recordList, j);
+            bm_setBitVal(clEntRecordList->bitmap.arr, entRecID, 1);
+
+
+            entityRecord_t *entRecord = &vecget(clEntRecordList->recordList, entRecID);
 
             // allocate a state change bitmap. Init the state record in the
             // ent record object
@@ -593,11 +598,13 @@ void ent_handleClientJoin(int conID, netcon_t *con)
 
 
             //init the quick record for storing new entities and their init params
+
             streamQuick_begin(&clEntRecordList->newEntRecord, con, &bs);
             stream_writeInt(&bs, entID);
             entSerialize->writeInitParam(entID, conID, &bs);
             streamQuick_end(&clEntRecordList->newEntRecord, con, &bs);
             printf("1 adding new entity to the new ent list %d %d \n", conID, entID);
+
 
             // entRecord = &vecget(clEntRecordList->recordList, vecsize(clEntList->recordList) - 1);
             // freeid = vecsize(clEntRecordList->recordList) - 1;
@@ -685,6 +692,34 @@ void ent_removeSyncedEntState(int entID, int entType)
     bm_setBitVal(entSerialize->entityBitmap.arr, entID, 0);
 }
 
+void ent_handleClientLeave(int conID, netcon_t *con)
+{
+    for(int i = 0; i < entSerializerList.length; i++)
+    {
+        entitySerializer_t *entSerialize = &entSerializerList.list[i];
+        int recID = i2imap_get(entSerialize->conIDMap, conID);
+        clientEntityRecordList_t *clEntList = &vecget(entSerialize->clientRecordList, recID);
+
+
+        for(int e = 0; e < vecsize(clEntList->recordList); e++)
+        {
+            if(!bm_getBitVal(clEntList->bitmap.arr, e))
+                continue;
+
+            entityRecord_t *entRecord = &vecget(clEntList->recordList, e);
+
+
+            streamRecent_close(&entRecord->recentRecord);
+        }
+
+        i2imap_remove(entSerialize->conIDMap, conID);
+
+        bm_setBitVal(entSerialize->clientBitmap.arr, recID, 0);
+
+        ent_freeClientEntList(conID, clEntList);
+    }
+}
+
 void ent_removeSyncedEntFromClient(int entID, int conID, netcon_t *con, int entType)
 {
     bitstream_t bs;
@@ -717,12 +752,6 @@ void ent_removeSyncedEntFromClient(int entID, int conID, netcon_t *con, int entT
     }
 }
 
-
-void ent_handleClientLeave(int conID, netcon_t *con)
-{
-    intPair_t entIDPair = ent_removeEntityFromClient(conID, con);
-    ent_removeSyncedEntFromClient(entIDPair.a, conID, con, entIDPair.b);
-}
 
 /********************SPRITE********************/
 
@@ -789,6 +818,7 @@ void ent_initVectorEntityList()
     // vecinit(GENERALZONE, vectorEntityList.rayEntIDList, int, initSize);
     vecinit(GENERALZONE, vectorEntityList.weaponOnHandList, weaponOnHand_t, initSize);
     vecinit(GENERALZONE, vectorEntityList.healthList, int, initSize);
+    vecinit(GENERALZONE, vectorEntityList.weaponShotList, int, initSize);
     vecinit(GENERALZONE, vectorEntityList.bitmap, byte, initSize/8);
     vectorEntityList.mainEntMap = i2imap_init(GENERALZONE);
 }
@@ -809,6 +839,7 @@ int ent_addVectorEntity()
         vecpushempty(vectorEntityList.angleInterpolateList, angleInterpolate_t);
         vecpushempty(vectorEntityList.moveIDList, int);
         vecpushempty(vectorEntityList.weaponOnHandList, weaponOnHand_t);
+        vecpushempty(vectorEntityList.weaponShotList, int);
         vecpushempty(vectorEntityList.healthList, int);
     }
 
@@ -820,6 +851,7 @@ int ent_addVectorEntity()
     angleInterpolate_t *angIntp = &vecget(vectorEntityList.angleInterpolateList, id);
     weaponOnHand_t *weaponOnHand = &vecget(vectorEntityList.weaponOnHandList, id);
 
+    vecset(vectorEntityList.weaponShotList, id, 0);
 
     vec3xyz(entPos->pos, 300, 330, 300);
     vec3xyz(moveEnt->pos, 300, 330, 300);
@@ -840,7 +872,7 @@ int ent_addVectorEntity()
     vecset(vectorEntityList.moveIDList, id, moveID);
 
 
-    sprite->texID = 3;
+    sprite->texID = 2;
     sprite->curSprite = 0;
 
 
@@ -989,6 +1021,7 @@ void ent_setRayWeapon(rayWeaponHandle_t *weaponHandle, weaponOnHand_t *weaponOnH
 {
     startTimer(&weaponOnHand->currentShootEndTime, 0);
     startTimer(&weaponOnHand->nextShootEndTime, 0);
+    weaponOnHand->curAngID = 0;
     weaponOnHand->ammoCount = 10;
     weaponOnHand->rayEntID = ent_addRayEntity(&weaponHandle->rayHandleList, entID, moveEnt);
 }
@@ -1023,6 +1056,9 @@ qbool ent_handleRayWeaponShoot(rayWeaponHandle_t *weaponHandle, int entID, weapo
     startTimer(&weaponOnHand->currentShootEndTime, weaponHandle->weaponType.currentShootDelay);
     startTimer(&weaponOnHand->nextShootEndTime, weaponHandle->weaponType.nextShootDelay);
 
+    angle += deg2rad(shootAngleList[weaponOnHand->curAngID & (shootAngListLen - 1)]);
+    weaponOnHand->curAngID++;
+    weaponOnHand->angle = angle;
 
     vec3setang2(dir, angle);
     vec3mult(dir, 50);
@@ -1030,6 +1066,8 @@ qbool ent_handleRayWeaponShoot(rayWeaponHandle_t *weaponHandle, int entID, weapo
     ent_emitRay(&weaponHandle->rayHandleList, entID, pos, dir);
 
     weaponOnHand->ammoCount -= 1;
+
+    printf("calling shoot\n");
 
     return qtrue;
 }

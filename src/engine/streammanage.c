@@ -163,6 +163,29 @@ int streamQuick_callWriteFunc(quickStreamRecord_t *quickRecord, netcon_t *con, v
 
 /*
 ===============
+streamQuick_close
+
+Releases the quick stream records and buffers.
+===============
+*/
+void streamQuick_close(quickStreamRecord_t *quickRecord)
+{
+    quickStreamNode_t *curNode, *nextNode;
+    for(curNode = quickRecord->head; curNode != NULL;)
+    {
+        zidfree(curNode->data);
+        nextNode = curNode->next;
+        zidfree(curNode);
+        curNode = nextNode;
+    }
+
+    quickRecord->head = quickRecord->tail = NULL;
+    quickRecord->recordCount = 0;
+}
+
+
+/*
+===============
 streamQuick_writePacket
 
 Writes all the quickNode records into a bitstream.
@@ -187,7 +210,6 @@ void streamQuick_writePacket(quickStreamRecord_t *quickRecord, bitstream_t *bs, 
 
     // Write the number of records that are sent
     stream_writeByte(bs, quickRecord->recordCount);
-    printf("sending record count %d \n", quickRecord->recordCount);
 
 
     // write the data from all the records into the stream

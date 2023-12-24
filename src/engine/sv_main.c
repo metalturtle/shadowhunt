@@ -110,7 +110,7 @@ serv_clrep_t *serv_addClient()
     clRep->con = nextCon;
     clRep->clState = SYS_IDLE;
     bm_setBitVal(server.clRepBitMap.arr, freeid, 1);
-    printf("adding client. conid=%d, clreplist=%d\n", freeid);
+    printf("\n\n\nadding client. conid=%d, clreplist=%d\n", freeid);
     s2imap_put(server.clRepMap, netAddrToString(nextCon->remoteAddress), freeid);
     startTimer(&clRep->lastRecvTimer, 3000);
     inpCmd_init(inpCmdList);
@@ -131,17 +131,26 @@ void serv_disconnectClient(int conID)
 {
     serv_clrep_t *clRep;
     clRep = &vecget(server.clRepList, conID);
-    
+
+    intPair_t entIDPair = ent_removeEntityFromClient(conID, clRep->con);
+
+
     ent_handleClientLeave(conID, clRep->con);
+
 
     zidfree(clRep->con);
 
+
     bm_setBitVal(server.clRepBitMap.arr, conID, 0);
+
 
     s2imap_remove(server.clRepMap, netAddrToString(clRep->con->remoteAddress));
 
+
     inputCommandList_t *inpCmdList = &vecget(cl_inputList.list, conID);
     inpCmd_free(inpCmdList);
+
+    serv_removeSyncedEnt(entIDPair.a, entIDPair.b);
 }
 
 void serv_checkTimeout()
@@ -149,7 +158,7 @@ void serv_checkTimeout()
     serv_clrep_t *clRep;
     for(int i = 0; i < server.clRepList.size; i++)
     {
-        if(!bm_getByteVal(server.clRepBitMap.arr, i))
+        if(!bm_getBitVal(server.clRepBitMap.arr, i))
             continue;
 
         clRep = &vecget(server.clRepList, i);
@@ -157,8 +166,7 @@ void serv_checkTimeout()
         if(checkTimer(&clRep->lastRecvTimer))
         {
             serv_disconnectClient(i);
-            printf("server disconnected client %d\n", i);
-            com_error(ERR_FATAL, "disconnect\n");
+            // com_error(ERR_FATAL, "disconnect\n");
         }
     }
 }
@@ -446,7 +454,7 @@ void serv_sendPacketAll()
 
     for(int i = 0; i < server.clRepList.size; i++)
     {
-        if(!bm_getByteVal(server.clRepBitMap.arr, i))
+        if(!bm_getBitVal(server.clRepBitMap.arr, i))
             continue;
 
         clRep = &vecget(server.clRepList, i);
@@ -485,7 +493,7 @@ void serv_runCmd()
 
     for(int i = 0; i < server.clRepList.size; i++)
     {
-        if(!bm_getByteVal(server.clRepBitMap.arr, i))
+        if(!bm_getBitVal(server.clRepBitMap.arr, i))
             continue;
 
         // clRep = &vecget(server.clRepList, i);

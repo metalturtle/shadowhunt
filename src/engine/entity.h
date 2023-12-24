@@ -277,6 +277,8 @@ typedef struct weaponOnHand_st
 	endTimer_t currentShootEndTime;
 	endTimer_t nextShootEndTime;
     int rayEntID;
+    int curAngID;
+    float angle;
 } weaponOnHand_t;
 
 typedef struct weaponType_st
@@ -340,6 +342,7 @@ typedef struct vectorEntityList_st
     vector(int) moveIDList;
     // vector(int) rayEntIDList;
     vector(weaponOnHand_t) weaponOnHandList;
+    vector(int) weaponShotList;
     vector(byte) bitmap;
 
     i2imap_t *mainEntMap;
@@ -467,7 +470,8 @@ extern void ent_ackSerializerList(int conID, netcon_t *con, bitstream_t *bs);
 extern intPair_t ent_setupEntityForClient(int conID, netcon_t *con);
 extern intPair_t ent_removeEntityFromClient(int conID, netcon_t *con);
 extern void ent_handleClientJoin(int, netcon_t *);
-extern void ent_handleClientLeave(int conID, netcon_t *con);
+extern void ent_handleClientLeave(int, netcon_t *);
+
 
 extern void ent_addSyncedEntState(int entID, int entType);
 extern void ent_addSyncedEntToClient(int entID, int conID, netcon_t *con, int entType);
