@@ -30,6 +30,9 @@ endTimer_t pickupSpawnTimer;
 #define VECENT_SPEED 1
 
 
+int MATCH_STATE = 0;
+endTimer_t matchTimer;
+
 int MAIN_ENT_ID = -1;
 
 void inpConfig_storeUsedKeys(char *usedKeys, int usedKeyLen)
@@ -1219,16 +1222,87 @@ void add_health_pickup()
     }
 }
 
+void eng_runMatch()
+{
+    int WAITING = 0, RUNNING = 3, FINISH = 1, RESETTING = 2;
+    if(MATCH_STATE == WAITING)
+    {
+        int clientCount = 0;
+        for(int i = 0; i < vecsize(server.clRepList); i++)
+        {
+            if(!bm_getBitVal(server.clRepBitMap.arr, i))
+                continue;
+
+            clientCount += 1;
+        }
+
+        if(clientCount > 1)
+        {
+            MATCH_STATE = RUNNING;
+        }
+    }
+    if(MATCH_STATE == RUNNING)
+    {
+        int playerCount = 0;
+        int lastEntID = -1;
+        for(int i = 0; i < vecsize(vectorEntityList.posList); i++)
+        {
+            if(!bm_getBitVal(vectorEntityList.bitmap.arr, i))
+            {
+                continue;
+            }
+
+            playerCount += 1;
+            lastEntID = i;
+        }
+
+        if(playerCount == 1)
+        {
+            printf("%d wins the match! \n", lastEntID);
+            MATCH_STATE = FINISH;
+            startTimer(&matchTimer, 5000);
+        }
+    }
+    else if(MATCH_STATE == FINISH)
+    {
+        if(checkTimer(&matchTimer))
+        {
+        for(int i = 0; i < vecsize(vectorEntityList.posList); i++)
+        {
+            if(!bm_getBitVal(vectorEntityList.bitmap.arr, i))
+            {
+                continue;
+            }
+            ent_addKillID(i);
+        }
+            MATCH_STATE = RESETTING;
+        }
+    }
+    else if (MATCH_STATE == RESETTING)
+    {
+        for(int i = 0; i < vecsize(server.clRepList); i++)
+        {
+            if(!bm_getBitVal(server.clRepBitMap.arr, i))
+                continue;
+
+            int entID = ent_addVectorEntity();
+            serv_addSyncedEnt(entID, 0);
+        }
+        MATCH_STATE = WAITING;
+    }
+}
+
 void eng_processServerEntities()
 {
     kill_vector_entities();
 
     ent_resetKillList();
 
-
     check_weapon_pickup_collided();
 
     check_pickup_collided();
+
+    eng_runMatch();
 
     add_health_pickup();
 

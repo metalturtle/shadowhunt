@@ -22,7 +22,73 @@ unsigned int indices[] = {
     0, 2, 3
 };
 
+#define FB_TEXTURE_ID 1
+#define FB_LIGHT1D_ID 2
+#define FB_OCCLUDER_ID 3
+#define FB_LIGHT_ID 4
+
+
+int colorTextureBuffer = 0;
+int light1DBuffer;
+int occluderBuffer;
+int lightBuffer;
+
+int screenVAO;
+
 /********************INSERT OPENGL OBJECTS********************/
+
+int createFrameBuffer(int fbID, int framex, int framey)
+{
+    unsigned int framebuffer;
+    glGenFramebuffers(FB_TEXTURE_ID, &framebuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+
+    // generate texture
+    unsigned int textureColorbuffer;
+    glGenTextures(fbID, &textureColorbuffer);
+    glBindTexture(GL_TEXTURE_2D, textureColorbuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, framex, framey, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // attach it to currently bound framebuffer object
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textureColorbuffer, 0);
+
+    unsigned int rbo;
+    glGenRenderbuffers(1, &rbo);
+    glBindRenderbuffer(GL_RENDERBUFFER, rbo); 
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, 800, 600);  
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
+
+    if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        printf("ERROR::FRAMEBUFFER:: Framebuffer is not complete!");
+    }
+    // std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    return textureColorbuffer;
+}
+
+void createTextureBuffer()
+{
+    colorTextureBuffer = createFrameBuffer(FB_TEXTURE_ID, getScreenWidth(), getScreenHeight());
+}
+
+void createLightFrameBuffer()
+{
+//     int light1DBuffer;
+// int occluderBuffer;
+// int lightBuffer;
+    int lightSize = 512;
+    int occluder = 256;
+    light1DBuffer = createFrameBuffer(FB_LIGHT1D_ID, lightSize, 1);
+    occluderBuffer = createFrameBuffer(FB_OCCLUDER_ID, occluder, occluder);
+    lightBuffer = createFrameBuffer(FB_LIGHT_ID, getScreenWidth(), getScreenHeight());
+}
 
 void loadTexture(const char *path, textureImage_t *texImg, unsigned int *texName)
 {   
@@ -622,6 +688,42 @@ void initSprites(int isClient)
 
 /********************RENDER********************/
 
+void renderLight()
+{
+    	// 	lightFBO.begin();
+		// Gdx.gl.glClearColor(THRESHOLD,THRESHOLD,THRESHOLD,0f);
+		// Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+		// lightFBO.end();
+
+    glBindFramebuffer(GL_FRAMEBUFFER, FB_LIGHT_ID); // back to default
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f); 
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, FB_OCCLUDER_ID);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, FB_LIGHT1D_ID);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    // glUseProgram();
+
+					// shadarrFBO[lightsceneid].begin();
+					// Gdx.gl.glClearColor(0f,0f,0f,0f);
+					// Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+					// spriteBatch.setShader(shadowMapShader);
+					// spriteBatch.begin();
+					// float val = 256;
+					// shadowMapShader.setUniformf("resolution", val,val);
+					// lightCamera.setToOrtho(false, val, shadarrFBO[lightsceneid].getHeight());
+					// lightCamera.position.set(0,0,0);
+					// spriteBatch.setProjectionMatrix(lightCamera.combined);
+					// spriteBatch.draw(occluderFBOArray[j].getColorBufferTexture(), 0, 0, val, shadarrFBO[lightsceneid].getHeight());
+					// spriteBatch.end();
+					// shadarrFBO[lightsceneid].end();
+
+}
+
 void drawRect(int texregid)
 {
     int shaderProgram = vecget(GraphicsHandle.shaderProgramList, 0);
@@ -748,11 +850,19 @@ int render()
     rect2_t bound;
     // int shaderProgram;
 
-    glClearColor(col ,col , col, 1.0);
-    glClear(GL_COLOR_BUFFER_BIT);
+    glBindFramebuffer(GL_FRAMEBUFFER, FB_TEXTURE_ID);
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT); // we're not using the stencil buffer now
+    // glEnable(GL_DEPTH_TEST);
     glEnable(GL_TEXTURE_2D);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // glClearColor(col ,col , col, 1.0);
+    // glClear(GL_COLOR_BUFFER_BIT);
+    // glEnable(GL_TEXTURE_2D);
+    // glEnable(GL_BLEND);
+    // glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     rect2xy(GraphicsHandle.camera.window, worldCamera.window[0], worldCamera.window[1]);
 
@@ -766,6 +876,20 @@ int render()
     //         drawRect(i);
     //     }
     // }
+
+
+    rect2_t wall;
+    for(int i = 0; i < world.worldWallSize; i++)
+    {
+        rect2set(wall, world.worldWallArray[i].rect);
+
+        bound[0] = bound[1] = 0;
+        bound[2] = wall[2];
+        bound[3] = wall[3];
+
+        drawSprite(2, wall[0], wall[1], bound, 0);
+    }
+
 
     for(int i = 0; i < vecsize(entSpriteList.renderList); i++)
     {
@@ -781,18 +905,6 @@ int render()
     
     // shaderProgram = vecget(GraphicsHandle.shaderProgramList, 1);
     // glUseProgram(shaderProgram);
-
-    rect2_t wall;
-    for(int i = 0; i < world.worldWallSize; i++)
-    {
-        rect2set(wall, world.worldWallArray[i].rect);
-
-        bound[0] = bound[1] = 0;
-        bound[2] = wall[2];
-        bound[3] = wall[3];
-
-        drawSprite(2, wall[0], wall[1], bound, 0);
-    }
 
     for(int i = 0; i < vecsize(animSpriteList.renderList); i++)
     {
@@ -832,6 +944,42 @@ int render()
                 );
     }
 
+    
+    // second pass
+    glBindFramebuffer(GL_FRAMEBUFFER, 0); // back to default
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f); 
+    glClear(GL_COLOR_BUFFER_BIT);
+    
+    // screenShader.use();  
+    glBindVertexArray(screenVAO);
+
+    float swidth = GraphicsHandle.swidth;
+    float sheight = GraphicsHandle.sheight;
+    float cellsize = GraphicsHandle.cellsize;
+
+    glm::mat4 trans = glm::mat4(1.0f);
+    trans = glm::ortho(0.0f, 10.0f, 0.0f, 10.0f, -10.0f, 100.0f);
+
+    int shaderProgram = vecget(GraphicsHandle.shaderProgramList, 0);
+    glUseProgram(shaderProgram);
+
+    unsigned int transformLoc = glGetUniformLocation(shaderProgram, "transform");
+    glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
+
+    // if(spriteID == 2)
+    //     printf("rendering red sprite %d \n", texName);
+
+    int VAO = SpriteHandle.spriteVAO;
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, colorTextureBuffer);
+    glBindVertexArray(VAO);
+    glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
+    // glDisable(GL_DEPTH_TEST);
+    // glBindTexture(GL_TEXTURE_2D, colorTextureBuffer);
+    // glDrawArrays(GL_TRIANGLES, 0, 6);  
+    // void drawSprite(int spriteID, float x, float y, float rect[4], float angle)
+
     // runPhysics();
 
     return 0;
@@ -860,11 +1008,29 @@ int initGraphicsHandle(int sx, int sy, int genzoneid, int isClient)
         createVertexShader("shaders//vertex.glsl");
         createFragmentShader("shaders//fragment.glsl");
         createFragmentShader("shaders//texArrayFragment.glsl");
+        createFragmentShader("shaders//shadowMap.glsl");
+        // createFragmentShader("shaders//shadowRender.glsl");
+
+        createTextureBuffer();
+
+        // createLightFrameBuffer();
+
+        float vertices[] = {
+        0, 0, 0,    1, 1, 1,  0, 0,
+        0, 1, 0,   1, 1, 1,  0, 1,
+        1, 1, 0,  1, 1, 1,  1, 1,
+        1, 0, 0,   1, 1, 1,  1, 0
+    };
+
+
+        screenVAO = createVAO(vertices, indices, VERTSIZE * sizeof(float), sizeof(indices));
     }
 
     initTextures(isClient);
 
     initSprites(isClient);
+
+
 
     // initPhysics();
 
