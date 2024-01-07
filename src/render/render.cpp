@@ -22,11 +22,10 @@ unsigned int indices[] = {
     0, 2, 3
 };
 
-#define FB_TEXTURE_ID 1
-#define FB_LIGHT1D_ID 2
-#define FB_OCCLUDER_ID 3
-#define FB_LIGHT_ID 4
-
+int FB_TEXTURE_ID;
+int FB_LIGHT1D_ID;
+int FB_OCCLUDER_ID;
+int FB_LIGHT_ID;
 
 int colorTextureBuffer = 0;
 int light1DBuffer;
@@ -37,23 +36,24 @@ int screenVAO;
 
 /********************INSERT OPENGL OBJECTS********************/
 
-int createFrameBuffer(int fbID, int framex, int framey)
+intPair_t createFrameBuffer(int framex, int framey)
 {
     unsigned int framebuffer;
-    glGenFramebuffers(FB_TEXTURE_ID, &framebuffer);
+    intPair_t bufID;
+    glGenFramebuffers(1, &framebuffer);
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
 
     // generate texture
-    unsigned int textureColorbuffer;
-    glGenTextures(fbID, &textureColorbuffer);
-    glBindTexture(GL_TEXTURE_2D, textureColorbuffer);
+    unsigned int textureColorBuffer;
+    glGenTextures(1, &textureColorBuffer);
+    glBindTexture(GL_TEXTURE_2D, textureColorBuffer);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, framex, framey, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glBindTexture(GL_TEXTURE_2D, 0);
 
     // attach it to currently bound framebuffer object
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textureColorbuffer, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textureColorBuffer, 0);
 
     unsigned int rbo;
     glGenRenderbuffers(1, &rbo);
@@ -70,24 +70,36 @@ int createFrameBuffer(int fbID, int framex, int framey)
     // std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    return textureColorbuffer;
+    bufID.a = framebuffer;
+    bufID.b = textureColorBuffer;
+    // return textureColorBuffer;
+    return bufID;
 }
 
 void createTextureBuffer()
 {
-    colorTextureBuffer = createFrameBuffer(FB_TEXTURE_ID, getScreenWidth(), getScreenHeight());
+    intPair_t bufID;
+    bufID = createFrameBuffer(getScreenWidth(), getScreenHeight());
+    FB_TEXTURE_ID = bufID.a;
+    colorTextureBuffer = bufID.b;
 }
 
 void createLightFrameBuffer()
 {
-//     int light1DBuffer;
-// int occluderBuffer;
-// int lightBuffer;
     int lightSize = 512;
     int occluder = 256;
-    light1DBuffer = createFrameBuffer(FB_LIGHT1D_ID, lightSize, 1);
-    occluderBuffer = createFrameBuffer(FB_OCCLUDER_ID, occluder, occluder);
-    lightBuffer = createFrameBuffer(FB_LIGHT_ID, getScreenWidth(), getScreenHeight());
+    intPair_t bufID;
+    bufID = createFrameBuffer(lightSize, 1);
+    FB_LIGHT1D_ID = bufID.a;
+    light1DBuffer = bufID.b;
+
+    bufID = createFrameBuffer(occluder, occluder);
+    FB_OCCLUDER_ID = bufID.a;
+    occluderBuffer = bufID.b;
+
+    bufID = createFrameBuffer(getScreenWidth(), getScreenHeight());
+    FB_LIGHT_ID = bufID.a;
+    lightBuffer = bufID.b;
 }
 
 void loadTexture(const char *path, textureImage_t *texImg, unsigned int *texName)
@@ -688,42 +700,6 @@ void initSprites(int isClient)
 
 /********************RENDER********************/
 
-void renderLight()
-{
-    	// 	lightFBO.begin();
-		// Gdx.gl.glClearColor(THRESHOLD,THRESHOLD,THRESHOLD,0f);
-		// Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
-		// lightFBO.end();
-
-    glBindFramebuffer(GL_FRAMEBUFFER, FB_LIGHT_ID); // back to default
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f); 
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, FB_OCCLUDER_ID);
-    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, FB_LIGHT1D_ID);
-    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-    // glUseProgram();
-
-					// shadarrFBO[lightsceneid].begin();
-					// Gdx.gl.glClearColor(0f,0f,0f,0f);
-					// Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
-					// spriteBatch.setShader(shadowMapShader);
-					// spriteBatch.begin();
-					// float val = 256;
-					// shadowMapShader.setUniformf("resolution", val,val);
-					// lightCamera.setToOrtho(false, val, shadarrFBO[lightsceneid].getHeight());
-					// lightCamera.position.set(0,0,0);
-					// spriteBatch.setProjectionMatrix(lightCamera.combined);
-					// spriteBatch.draw(occluderFBOArray[j].getColorBufferTexture(), 0, 0, val, shadarrFBO[lightsceneid].getHeight());
-					// spriteBatch.end();
-					// shadarrFBO[lightsceneid].end();
-
-}
-
 void drawRect(int texregid)
 {
     int shaderProgram = vecget(GraphicsHandle.shaderProgramList, 0);
@@ -842,6 +818,79 @@ void drawAnimSprite(animatedSprite_t *entSprite)
     glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
 }
 
+void renderLight()
+{
+    // int shadow1DShader = vecget(GraphicsHandle.shaderProgramList, 0);
+    int shadow1DShader = vecget(GraphicsHandle.shaderProgramList, 2);
+    int lightShader = vecget(GraphicsHandle.shaderProgramList, 3);
+    camera_t camera = GraphicsHandle.camera;
+    float val = 256;
+    rect2_t wall;
+    rect2_t bound;
+    // int VAO = SpriteHandle.spriteVAO;
+    int VAO = screenVAO;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, FB_LIGHT_ID); // back to default
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f); 
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, FB_OCCLUDER_ID);
+    glClearColor(0.0f, 1.0f, 1.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+
+    for(int i = 0; i < world.worldWallSize; i++)
+    {
+        rect2set(wall, world.worldWallArray[i].rect);
+
+        bound[0] = bound[1] = 0;
+        bound[2] = wall[2];
+        bound[3] = wall[3];
+
+        drawSprite(2, wall[0], wall[1], bound, 0);
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, FB_LIGHT1D_ID);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glUseProgram(shadow1DShader);
+
+    glm::mat4 trans = glm::mat4(1.0f);
+    trans = glm::ortho(0.0f, val, 0.0f, val, -10.0f, 100.0f);
+    trans = glm::scale(trans, glm::vec3(val, val, 1.0f));
+
+    unsigned int transformLoc = glGetUniformLocation(shadow1DShader, "resolution");
+    glUniform2f(transformLoc, val, val);
+
+    transformLoc = glGetUniformLocation(shadow1DShader, "transform");
+    glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, occluderBuffer);
+    glBindVertexArray(VAO);
+    glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, FB_LIGHT_ID);
+    trans = glm::ortho(0.0f, val, 0.0f, val, -10.0f, 100.0f);
+    trans = glm::scale(trans, glm::vec3(val, val, 1.0f));
+    glUseProgram(lightShader);
+
+    transformLoc = glGetUniformLocation(lightShader, "transform");
+    glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
+
+    transformLoc = glGetUniformLocation(lightShader, "softShadows");
+    glUniform1f(transformLoc, 1.0f);
+
+    transformLoc = glGetUniformLocation(lightShader, "resolution");
+    glUniform2f(transformLoc, 1, 1);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, light1DBuffer);
+    glBindVertexArray(VAO);
+    glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
+}
+
+
 int render()
 {
     float col = 0.1;
@@ -849,6 +898,9 @@ int render()
     animatedSprite_t *animSprite;
     rect2_t bound;
     // int shaderProgram;
+
+
+    renderLight();
 
     glBindFramebuffer(GL_FRAMEBUFFER, FB_TEXTURE_ID);
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
@@ -865,6 +917,7 @@ int render()
     // glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     rect2xy(GraphicsHandle.camera.window, worldCamera.window[0], worldCamera.window[1]);
+
 
     // shaderProgram = vecget(GraphicsHandle.shaderProgramList, 0);
     // glUseProgram(shaderProgram);
@@ -956,31 +1009,28 @@ int render()
     float swidth = GraphicsHandle.swidth;
     float sheight = GraphicsHandle.sheight;
     float cellsize = GraphicsHandle.cellsize;
-
-    glm::mat4 trans = glm::mat4(1.0f);
-    trans = glm::ortho(0.0f, 10.0f, 0.0f, 10.0f, -10.0f, 100.0f);
+    int VAO = SpriteHandle.spriteVAO;
 
     int shaderProgram = vecget(GraphicsHandle.shaderProgramList, 0);
     glUseProgram(shaderProgram);
 
+    glm::mat4 trans = glm::mat4(1.0f);
+    trans = glm::ortho(0.0f, 10.0f, 0.0f, 10.0f, -10.0f, 100.0f);
     unsigned int transformLoc = glGetUniformLocation(shaderProgram, "transform");
     glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
-
-    // if(spriteID == 2)
-    //     printf("rendering red sprite %d \n", texName);
-
-    int VAO = SpriteHandle.spriteVAO;
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, colorTextureBuffer);
     glBindVertexArray(VAO);
     glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
-    // glDisable(GL_DEPTH_TEST);
-    // glBindTexture(GL_TEXTURE_2D, colorTextureBuffer);
-    // glDrawArrays(GL_TRIANGLES, 0, 6);  
-    // void drawSprite(int spriteID, float x, float y, float rect[4], float angle)
 
-    // runPhysics();
+    trans = glm::ortho(0.0f, 20.0f, 0.0f, 20.0f, -10.0f, 100.0f);
+    glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, occluderBuffer);
+    glBindVertexArray(VAO);
+    glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
 
     return 0;
 }
@@ -1009,11 +1059,11 @@ int initGraphicsHandle(int sx, int sy, int genzoneid, int isClient)
         createFragmentShader("shaders//fragment.glsl");
         createFragmentShader("shaders//texArrayFragment.glsl");
         createFragmentShader("shaders//shadowMap.glsl");
-        // createFragmentShader("shaders//shadowRender.glsl");
+        createFragmentShader("shaders//shadowRender.glsl");
 
         createTextureBuffer();
 
-        // createLightFrameBuffer();
+        createLightFrameBuffer();
 
         float vertices[] = {
         0, 0, 0,    1, 1, 1,  0, 0,
