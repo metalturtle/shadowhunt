@@ -17,6 +17,13 @@ float vertices[] = {
     10, 0, 0,   1, 1, 1,  1, 0
 };
 
+float fontVertices[] = {
+    0, 0, 0,    1, 1, 1,  0, 0,
+    0, 1, 0,   1, 1, 1,  0, -1,
+    1, 1, 0,  1, 1, 1,  1, -1,
+    1, 0, 0,   1, 1, 1,  1, 0
+    };
+
 unsigned int indices[] = {
     0, 1, 2,
     0, 2, 3
@@ -33,6 +40,10 @@ int occluderBuffer;
 int lightBuffer;
 
 int screenVAO;
+
+textureImage_t fontTexture;
+unsigned int fontTextureID;
+int fontVAO;
 
 /********************INSERT OPENGL OBJECTS********************/
 
@@ -820,24 +831,23 @@ void drawAnimSprite(animatedSprite_t *entSprite)
 
 void renderLight()
 {
-    // int shadow1DShader = vecget(GraphicsHandle.shaderProgramList, 0);
     int shadow1DShader = vecget(GraphicsHandle.shaderProgramList, 2);
     int lightShader = vecget(GraphicsHandle.shaderProgramList, 3);
     camera_t camera = GraphicsHandle.camera;
     float val = 256;
     rect2_t wall;
     rect2_t bound;
+    float lineShaderHeight = 1;
     // int VAO = SpriteHandle.spriteVAO;
     int VAO = screenVAO;
 
     glBindFramebuffer(GL_FRAMEBUFFER, FB_LIGHT_ID); // back to default
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f); 
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f); 
     glClear(GL_COLOR_BUFFER_BIT);
 
     glBindFramebuffer(GL_FRAMEBUFFER, FB_OCCLUDER_ID);
-    glClearColor(0.0f, 1.0f, 1.0f, 0.0f);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT);
-
 
     for(int i = 0; i < world.worldWallSize; i++)
     {
@@ -856,8 +866,8 @@ void renderLight()
     glUseProgram(shadow1DShader);
 
     glm::mat4 trans = glm::mat4(1.0f);
-    trans = glm::ortho(0.0f, val, 0.0f, val, -10.0f, 100.0f);
-    trans = glm::scale(trans, glm::vec3(val, val, 1.0f));
+    trans = glm::ortho(0.0f, val, 0.0f, lineShaderHeight, -10.0f, 100.0f);
+    trans = glm::scale(trans, glm::vec3(val, lineShaderHeight, 1.0f));
 
     unsigned int transformLoc = glGetUniformLocation(shadow1DShader, "resolution");
     glUniform2f(transformLoc, val, val);
@@ -871,7 +881,7 @@ void renderLight()
     glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
 
     glBindFramebuffer(GL_FRAMEBUFFER, FB_LIGHT_ID);
-    trans = glm::ortho(0.0f, val, 0.0f, val, -10.0f, 100.0f);
+    trans = glm::ortho(0.0f, val, val, 0.0f, -10.0f, 100.0f);
     trans = glm::scale(trans, glm::vec3(val, val, 1.0f));
     glUseProgram(lightShader);
 
@@ -888,8 +898,50 @@ void renderLight()
     glBindTexture(GL_TEXTURE_2D, light1DBuffer);
     glBindVertexArray(VAO);
     glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
+
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
+void renderFont()
+{
+    float swidth = GraphicsHandle.swidth;
+    float sheight = GraphicsHandle.sheight;
+    float cellsize = GraphicsHandle.cellsize;
+    int VAO = SpriteHandle.spriteVAO;
+
+    glm::mat4 trans = glm::mat4(1.0f);
+    float aspect = ((float)fontTexture.height)/((float)fontTexture.width);
+    trans = glm::ortho(0.0f, swidth , 0.0f, sheight , -10.0f, 100.0f);
+    trans = glm::translate(trans, glm::vec3(0, sheight/2, 0.0f));
+    // trans = glm::rotate(trans, angle, glm::vec3(0.0f, 0.0f, 1.0f));
+    // trans = glm::translate(trans, glm::vec3(rect[0], rect[1], 0.0f));
+    trans = glm::scale(trans, glm::vec3(300,300*aspect, 1.0f));
+
+    int shaderProgram = vecget(GraphicsHandle.shaderProgramList, 0);
+    glUseProgram(shaderProgram);
+    unsigned int transformLoc = glGetUniformLocation(shaderProgram, "transform");
+    glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, fontTextureID);
+    glBindVertexArray(fontVAO);
+
+    float alphaX = 1.0/32.0;
+    float alphaY = 1.0/3.0;
+    float yCoord = alphaY * 2;
+    float xCoord = alphaX  * 8;
+
+    float newVert[] = {
+    0, 0, 0,    1, 1, 1,  xCoord, -yCoord,
+    0, 1, 0,   1, 1, 1,  xCoord, -yCoord - alphaY,
+    1, 1, 0,  1, 1, 1,  xCoord + alphaX, -yCoord - alphaY,
+    1, 0, 0,   1, 1, 1,  xCoord + alphaX, -yCoord
+    };
+
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(newVert), newVert); 
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
+}
 
 int render()
 {
@@ -899,7 +951,7 @@ int render()
     rect2_t bound;
     // int shaderProgram;
 
-
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     renderLight();
 
     glBindFramebuffer(GL_FRAMEBUFFER, FB_TEXTURE_ID);
@@ -958,6 +1010,7 @@ int render()
     
     // shaderProgram = vecget(GraphicsHandle.shaderProgramList, 1);
     // glUseProgram(shaderProgram);
+    
 
     for(int i = 0; i < vecsize(animSpriteList.renderList); i++)
     {
@@ -1032,6 +1085,7 @@ int render()
     glBindVertexArray(VAO);
     glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
 
+    renderFont();
     return 0;
 }
 
@@ -1080,9 +1134,9 @@ int initGraphicsHandle(int sx, int sy, int genzoneid, int isClient)
 
     initSprites(isClient);
 
+    loadTexture("res//GUI//fonttest.png", &fontTexture, &fontTextureID);
 
-
-    // initPhysics();
+    fontVAO = createVAO(fontVertices, indices, VERTSIZE * sizeof(float), sizeof(indices));
 
     return 0;
 }

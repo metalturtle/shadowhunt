@@ -1396,9 +1396,6 @@ void eng_processClientEntities()
 
 
     ent_resetRayWeapon(&rayWeaponHandle);
-
-    printf("camera %f %f \n", worldCamera.window[0], worldCamera.window[1]);
-
 }
 
 
