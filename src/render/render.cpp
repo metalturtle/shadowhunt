@@ -115,7 +115,9 @@ void createLightFrameBuffer()
 
 void loadTexture(const char *path, textureImage_t *texImg, unsigned int *texName)
 {   
+    printf("at loadTexture\n");
     int error = readPNG(path, texImg);
+    printf("after readPNG\n");
 
     if (error)
     {
@@ -902,7 +904,7 @@ void renderLight()
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
-void renderFont()
+void renderFont(char *letter, float x, float y)
 {
     float swidth = GraphicsHandle.swidth;
     float sheight = GraphicsHandle.sheight;
@@ -911,36 +913,58 @@ void renderFont()
 
     glm::mat4 trans = glm::mat4(1.0f);
     float aspect = ((float)fontTexture.height)/((float)fontTexture.width);
-    trans = glm::ortho(0.0f, swidth , 0.0f, sheight , -10.0f, 100.0f);
-    trans = glm::translate(trans, glm::vec3(0, sheight/2, 0.0f));
+
+    //     trans = glm::ortho(0.0f, swidth / cellsize, 0.0f, sheight / cellsize, -10.0f, 100.0f);
+    // trans = glm::translate(trans, glm::vec3(-camera.window[0] + x, -camera.window[1] + y, 0.0f));
     // trans = glm::rotate(trans, angle, glm::vec3(0.0f, 0.0f, 1.0f));
     // trans = glm::translate(trans, glm::vec3(rect[0], rect[1], 0.0f));
-    trans = glm::scale(trans, glm::vec3(300,300*aspect, 1.0f));
-
-    int shaderProgram = vecget(GraphicsHandle.shaderProgramList, 0);
-    glUseProgram(shaderProgram);
-    unsigned int transformLoc = glGetUniformLocation(shaderProgram, "transform");
-    glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
+    // trans = glm::scale(trans, glm::vec3(rect[2], rect[3], 1.0f));
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, fontTextureID);
     glBindVertexArray(fontVAO);
 
-    float alphaX = 1.0/32.0;
-    float alphaY = 1.0/3.0;
-    float yCoord = alphaY * 2;
-    float xCoord = alphaX  * 8;
+    for(int i = 0; i < 3; i++)
+    {
+        char ach = letter[i];
 
-    float newVert[] = {
-    0, 0, 0,    1, 1, 1,  xCoord, -yCoord,
-    0, 1, 0,   1, 1, 1,  xCoord, -yCoord - alphaY,
-    1, 1, 0,  1, 1, 1,  xCoord + alphaX, -yCoord - alphaY,
-    1, 0, 0,   1, 1, 1,  xCoord + alphaX, -yCoord
-    };
+        trans = glm::ortho(0.0f, swidth , 0.0f, sheight , -10.0f, 100.0f);
+        trans = glm::translate(trans, glm::vec3(40 * i, 0, 0.0f));
+            // trans = glm::rotate(trans, angle, glm::vec3(0.0f, 0.0f, 1.0f));
+            // trans = glm::translate(trans, glm::vec3(rect[0], rect[1], 0.0f));
+        trans = glm::scale(trans, glm::vec3(40,40, 1.0f));
 
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(newVert), newVert); 
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
+        int shaderProgram = vecget(GraphicsHandle.shaderProgramList, 0);
+        glUseProgram(shaderProgram);
+        unsigned int transformLoc = glGetUniformLocation(shaderProgram, "transform");
+        glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
+
+
+        float asciiMap[256];
+        for(int i = 'a'; i <= 'z'; i++)
+        {
+            asciiMap[i] = i - 'a' + 1;
+        }
+
+        float alphaX = 1.0/32.0;
+        float alphaY = 1.0/3.0;
+
+        float yCoord = alphaY * 0;
+        float xCoord = alphaX  * asciiMap[ach];
+
+        float newVert[] = {
+        0, 0, 0,    1, 1, 1,  xCoord, -yCoord,
+        0, 1, 0,   1, 1, 1,  xCoord, -yCoord - alphaY,
+        1, 1, 0,  1, 1, 1,  xCoord + alphaX, -yCoord - alphaY,
+        1, 0, 0,   1, 1, 1,  xCoord + alphaX, -yCoord
+        };
+
+        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(newVert), newVert);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        // glDrawArrays(GL_TRIANGLES, 0, 6);
+        glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
+    }
+
 }
 
 int render()
@@ -951,8 +975,8 @@ int render()
     rect2_t bound;
     // int shaderProgram;
 
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    renderLight();
+    // glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    // renderLight();
 
     glBindFramebuffer(GL_FRAMEBUFFER, FB_TEXTURE_ID);
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
@@ -1085,7 +1109,13 @@ int render()
     glBindVertexArray(VAO);
     glDrawElements(GL_TRIANGLES, sizeof(indices), GL_UNSIGNED_INT, 0);
 
-    renderFont();
+    char *str = "string";
+    // for(int i = 0; i < strlen(str); i++)
+    // {
+    //     renderFont(str[i], i, 0);
+    // }
+    renderFont("str", 0, 0);
+    
     return 0;
 }
 
@@ -1134,9 +1164,10 @@ int initGraphicsHandle(int sx, int sy, int genzoneid, int isClient)
 
     initSprites(isClient);
 
-    loadTexture("res//GUI//fonttest.png", &fontTexture, &fontTextureID);
-
-    fontVAO = createVAO(fontVertices, indices, VERTSIZE * sizeof(float), sizeof(indices));
+    if(isClient) {
+        loadTexture("res//GUI//fonttest.png", &fontTexture, &fontTextureID);
+        fontVAO = createVAO(fontVertices, indices, VERTSIZE * sizeof(float), sizeof(indices));
+    }
 
     return 0;
 }
