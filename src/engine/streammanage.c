@@ -52,7 +52,7 @@ Initializes the bitstream.
 */
 void streamQuick_begin(quickStreamRecord_t *quickRecord, netcon_t *con, bitstream_t *bs)
 {
-    byte *buf;
+    // byte *buf;
 
     // buf = (byte *) zidmalloc(TEMPORARYZONE, MAX_SEGMENTLEN);
     stream_init(bs, writeBuf, MAX_SEGMENTLEN);
@@ -256,10 +256,10 @@ int streamQuick_readCount(quickStreamRecord_t *quickRecord, bitstream_t *bs)
 
 void streamQuick_readPacket(quickStreamRecord_t *quickRecord, bitstream_t *bs)
 {
-    byte isSent;
+    // byte isSent;
     int recordCount;
-    quickStreamNode_t newData;
-    quickStreamNode_t *curdata;
+    // quickStreamNode_t newData;
+    // quickStreamNode_t *curdata;
 
 
     // Check if there is data to read
@@ -295,7 +295,7 @@ void streamQuick_acknowledge(quickStreamRecord_t *quickRecord, netcon_t *con)
 {
     quickStreamNode_t *curData, *nextData;
     quickStreamNode_t *lastSent = NULL;
-    int lastseq = 0;
+    // int lastseq = 0;
 
 
     // If no records, then return
@@ -309,7 +309,7 @@ void streamQuick_acknowledge(quickStreamRecord_t *quickRecord, netcon_t *con)
         if(netcon_getPacketState(con, curData->sendSequence) == NETCON_PACKET_SUCCESS)
         {
             lastSent = curData;
-            lastseq = curData->sendSequence;
+            // lastseq = curData->sendSequence;
         }
     }
 
@@ -330,7 +330,7 @@ void streamQuick_acknowledge(quickStreamRecord_t *quickRecord, netcon_t *con)
     {
         quickRecord->recordCount--;
         
-        printf("freeing curdata %p\n", curData);
+        // printf("freeing curdata %p\n", curData);
 
         // saving the next record, and freeing the current record
         nextData = curData->next;
@@ -484,10 +484,10 @@ void streamReliable_writePacket(relStreamRecord_t *relRecord ,bitstream_t *packe
     //Go through all the records, find any unsent packet, and write it to the packet bitstream
     for(curdata = relRecord->head; (curdata != NULL); curdata = curdata->next)
     {
-        printf("writeRelStream, curdata=%p, status=%d, record=%d, issent=%d\n", curdata,
-         netcon_getPacketState(con, curdata->sendSequence)
-         , curdata->recordID
-         , curdata->isSent);
+        // printf("writeRelStream, curdata=%p, status=%d, record=%d, issent=%d\n", curdata,
+        //  netcon_getPacketState(con, curdata->sendSequence)
+        //  , curdata->recordID
+        //  , curdata->isSent);
 
 
         // If the window size is exceeded, then break
@@ -525,9 +525,9 @@ void streamReliable_writePacket(relStreamRecord_t *relRecord ,bitstream_t *packe
         printf("resending\n");
         for(curdata = relRecord->head; (curdata != NULL); curdata = curdata->next)
         {
-            printf("writeRelStream, curdata=%p, status=%d, record=%d\n",
-             curdata, netcon_getPacketState(con, curdata->sendSequence)
-             , curdata->recordID);
+            // printf("writeRelStream, curdata=%p, status=%d, record=%d\n",
+            //  curdata, netcon_getPacketState(con, curdata->sendSequence)
+            //  , curdata->recordID);
 
 
             // If window size is exceeded, then break
@@ -770,7 +770,7 @@ from the record list
 void streamReliable_acknowledge(relStreamRecord_t *relRecord, netcon_t *con)
 {
     relStreamNode_t *curData, *nextData, *prevData;
-    int i;
+    // int i;
 
 
     // If the record list is empty, then there are no records to acknowledge, and return
@@ -1021,9 +1021,9 @@ void streamRecent_writePacket(recentStreamRecord_t *recentRecord, bitstream_t *b
 
     for(curData = recentRecord->head; curData != NULL; curData = curData->next)
     {
-        printf("curdata:%p, seq=%d, status=%d, bit:", curData, curData->sendSequence
-        ,netcon_getPacketState(con, curData->sendSequence)
-        ); printbit(curData->stateBm[0]); printf("\n");
+        // printf("curdata:%p, seq=%d, status=%d, bit:", curData, curData->sendSequence
+        // ,netcon_getPacketState(con, curData->sendSequence)
+        // ); printbit(curData->stateBm[0]); printf("\n");
         if(netcon_getPacketState(con, curData->sendSequence) == NETCON_PACKET_DROPPED)
         {
             for(int i = 0; i < recentRecord->stateBitLen; i++)  {

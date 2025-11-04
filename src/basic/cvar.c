@@ -111,13 +111,13 @@ cvar_t *cvar_get(const char *name, char *value)
 
     cv = &cvarList[cvarCount];
     cvarCount++;
-    cv->name = copyString(name, strlen(name) + 1);
+    cv->name = copyString((char*) name, strlen(name) + 1);
     cvar_set2(cv, value);
     addToHashTable(cv);
     return cv;
 }
 
-void cvar_init()
+void cvar_init(void)
 {
     for(int i = 0; i < CVARHASHSIZE; i++)
     {

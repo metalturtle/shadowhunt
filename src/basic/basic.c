@@ -103,7 +103,7 @@ int bm_getBitVal(byte *arr, int i)
     return (arr[i >> 3] & (1 << (i & 7))) ? 1 : 0;
 }
 
-int bm_setBitVal(byte *arr, int i, byte b)
+void bm_setBitVal(byte *arr, int i, byte b)
 {
     if(b) arr[i >> 3] |= bm_getBit(i);
     else arr[i >> 3] &= ~bm_getBit(i);
@@ -491,21 +491,21 @@ static u_int64_t hash_key(const char *key)
     return hash;
 }
 
-static inline s2inode_t *s2imap_getnode(s2imap_t *smap, const char *key)
-{
-    u_int64_t hash = hash_key(key);
-    int index = (int)(hash & (u_int64_t)(smap->capacity - 1));
+// static inline s2inode_t *s2imap_getnode(s2imap_t *smap, const char *key)
+// {
+//     u_int64_t hash = hash_key(key);
+//     int index = (int)(hash & (u_int64_t)(smap->capacity - 1));
     
-    while(smap->list[index].key != NULL) {
-        if(strcmp(smap->list[index].key,key) == 0) {
-            return &smap->list[index];
-        }
-        index += 1;
-        if(index == smap->capacity) {
-            index = 0;
-        }
-    }
-}
+//     while(smap->list[index].key != NULL) {
+//         if(strcmp(smap->list[index].key,key) == 0) {
+//             return &smap->list[index];
+//         }
+//         index += 1;
+//         if(index == smap->capacity) {
+//             index = 0;
+//         }
+//     }
+// }
 
 int s2imap_get(s2imap_t *smap, const char *key)
 {

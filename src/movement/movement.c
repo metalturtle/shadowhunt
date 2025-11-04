@@ -1,11 +1,11 @@
-#include "chipmunk/chipmunk_private.h"
-#include "../lib/cJSON/cJSON.h"
+// #include "chipmunk/chipmunk_private.h"
+#include "../basic/cJSON.h"
 #include "../basic/basic.h"
 #include "movement.h"
 
 #define PLAYER_AIR_ACCEL 0.1f
-cpBody *ballBody;
-cpSpace *space;
+// cpBody *ballBody;
+// cpSpace *space;
 float timeStep = 1.0/60.0;
 
 world_t world;
@@ -44,7 +44,7 @@ void world_load()
         w = cJSON_GetNumberValue(cJSON_GetArrayItem(wallJSON, 2));
         h = cJSON_GetNumberValue(cJSON_GetArrayItem(wallJSON, 3));
 
-        rect2xywh(world.worldWallArray[i].rect,x, y, w, h);
+        rect2xywh(&world.worldWallArray[i].rect,x, y, w, h);
         i++;
     }
     world.worldWallSize = arrSize;
@@ -53,26 +53,26 @@ void world_load()
     zidfree(fbuf);
 }
 
-void updateVelocity(cpBody *body, cpVect gravity, cpFloat damping, cpFloat dt)
-{
-    entityMove_t *entMove;
+// void updateVelocity(cpBody *body, cpVect gravity, cpFloat damping, cpFloat dt)
+// {
+//     // entityMove_t *entMove;
 
-    entMove = (entityMove_t *) body->userData;
+//     // entMove = (entityMove_t *) body->userData;
 
-    entMove->pos[0] = body->p.x + entMove->rect[0];
-    entMove->pos[1] = body->p.y + entMove->rect[1];
-    cpFloat target_vx = entMove->dir[0] * entMove->speed;
-    cpFloat target_vy = entMove->dir[1] * entMove->speed;
+//     // entMove->pos[0] = body->p.x + entMove->rect[0];
+//     // entMove->pos[1] = body->p.y + entMove->rect[1];
+//     // cpFloat target_vx = entMove->dir[0] * entMove->speed;
+//     // cpFloat target_vy = entMove->dir[1] * entMove->speed;
 
-    body->v.x = target_vx;
-    body->v.y = target_vy;
-	// body->v.x = cpflerpconst(body->v.x, target_vx, PLAYER_AIR_ACCEL*dt*100);
-	// body->v.y = cpflerpconst(body->v.y, target_vy, PLAYER_AIR_ACCEL*dt*100);
+//     // body->v.x = target_vx;
+//     // body->v.y = target_vy;
+// 	// body->v.x = cpflerpconst(body->v.x, target_vx, PLAYER_AIR_ACCEL*dt*100);
+// 	// body->v.y = cpflerpconst(body->v.y, target_vy, PLAYER_AIR_ACCEL*dt*100);
 
-    // if(body->v.x > 0)
-    //     printf("updateVel dir (%f,%f) speed %f\n", entMove->dir[0], entMove->dir[1], entMove->speed);
+//     // if(body->v.x > 0)
+//     //     printf("updateVel dir (%f,%f) speed %f\n", entMove->dir[0], entMove->dir[1], entMove->speed);
 
-}
+// }
 
 
 void physics_init()

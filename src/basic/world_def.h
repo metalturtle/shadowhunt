@@ -45,7 +45,7 @@ typedef vec_t rect2_t[4];
 
 #define rect2set(r1, r2) {(r1)[0] = (r2)[0]; (r1)[1] = (r2)[1]; (r1)[2] = (r2)[2]; (r1)[3] = (r2)[3];}
 #define rect2xy(r1, x, y) {(r1)[0] = (x); (r1)[1] = (y);}
-#define rect2xywh(r1, x, y, w, h) {(r1)[0] = MIN((x), (x) + (w)); (r1)[1] = MIN((y), (y) + (h)); (r1)[2] = abs(w); (r1)[3] = abs(h); }
+// #define rect2xywh(r1, x, y, w, h) {(r1)[0] = MIN((x), (x) + (w)); (r1)[1] = MIN((y), (y) + (h)); (r1)[2] = fabsf(w); (r1)[3] = fabsf(h); }
 #define rect2centx(r) ((r)[2]/2) + (r)[0]
 #define rect2centy(r) ((r)[3]/2) + (r)[1]
 #define checkRectIntersect(r1, r2) ( (func_absFloat((r1[0] + r1[2]/2) - (r2[0] + r2[2]/2)) < ((r1[2] + r2[2])/2) ) \
@@ -76,5 +76,7 @@ typedef struct camera_st
 {
     rect2_t window;
 } camera_t;
+
+extern void rect2xywh(rect2_t *r1, float x, float y, float w, float h);
 
 #endif

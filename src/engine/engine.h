@@ -3,6 +3,7 @@
 
 #include "../basic/basic.h"
 #include "../basic/world_def.h"
+#include <SDL3/SDL.h>
 
 #define RELSTREAMWINDSIZE 4
 
@@ -112,7 +113,7 @@ extern void streamRecent_setStateBits(recentStreamRecord_t *recentRecord, byte *
 /********************ENTITY********************/
 
 
-extern camera_t worldCamera;
+// extern camera_t worldCamera;
 
 /********************ENGINE********************/
 
@@ -330,4 +331,32 @@ extern void world_load();
 extern void eng_processServerEntities();
 extern void eng_processClientEntities();
 
+struct EngineParameters_st {
+    // SDL_FPoint cameraPos;
+    float aspectRatio;
+    float windowWidth;;
+    float windowHeight;
+    float screenFPS;
+    float tickRate;
+    float absoluteDeltaTime;
+    float gameDeltaTime;
+    float toWindowRatioX;
+    float toWindowRatioY;
+    float toWorldRatioX;
+    float toWorldRatioY;
+    Uint64 currentAbsoluteTick;
+    Uint64 currentGameTick;
+    double bulletTimeRate;
+    bool isPaused;
+    bool KEYPRESSED[256];
+    SDL_Window *window;
+    SDL_Renderer *renderer;
+    // sqlite3 *database;
+};
+
+typedef struct EngineParameters_st EngineParameters;
+extern EngineParameters engineParameters;
+
+extern SDL_FRect cameraRect;
+extern qbool isStateEmpty(recentStreamNode_t *node, int len);
 #endif

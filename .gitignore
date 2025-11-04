@@ -1,11 +1,45 @@
-.vscode
-bkp
-build/*
-levels
-res
-src/lib
-src/system/lib
-test
-plan.txt
-lib
-build1
+# Build directories
+build/
+Debug/
+Release/
+
+# Compiled object files
+*.o
+*.obj
+*.lo
+*.a
+*.la
+*.so
+*.dylib
+*.dll
+
+# Executables
+*.exe
+*.out
+hello
+main
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CPackConfig.cmake
+CPackSourceConfig.cmake
+Makefile
+compile_commands.json
+*.cmake
+
+# macOS
+.DS_Store
+*.dSYM/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Zip archives (unless you need them)
+*.zip
+.cache

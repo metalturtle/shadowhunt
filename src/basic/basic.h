@@ -10,7 +10,7 @@ extern "C" {
 #include <stdarg.h>
 #include <stdlib.h>
 #include <sys/time.h>
-#include "../lib/cJSON/cJSON.h"
+#include "cJSON.h"
 
 
 #define MAX(a,b) ((a)>(b)?(a):(b))
@@ -36,28 +36,28 @@ extern int bm_getByte(int i);
 extern int bm_getBit(int i);
 extern int bm_getByteVal(byte *arr, int i);
 extern int bm_getBitVal(byte *arr, int i);
-extern int bm_setBitVal(byte *arr, int i, byte b);
+extern void bm_setBitVal(byte *arr, int i, byte b);
 extern int bm_findEmpty(byte *arr, int size);
 
 /********************BITSTREAM********************/
 
 typedef struct bitstream_st {
-    int bufsize;
+    unsigned int bufsize;
     int datalen;
-    char *buf;
+    byte *buf;
     unsigned int curbyte;
     unsigned int curbit;
 } bitstream_t;
 
-extern void stream_init(bitstream_t *bs,char *buf, int size);
+extern void stream_init(bitstream_t *bs,byte *buf, int size);
 extern qbool stream_isWritten(bitstream_t *bs);
 extern void stream_writeBit(bitstream_t* bs, int val);
-extern void stream_writeByte(bitstream_t* bs, unsigned char b);
+extern void stream_writeByte(bitstream_t* bs, byte b);
 extern void stream_writeInt(bitstream_t* bs, unsigned int b);
 extern void stream_writeLong(bitstream_t* bs, unsigned long int b);
 extern void stream_writeDouble(bitstream_t* bs, long double f);
 extern void stream_writeData(bitstream_t *bs, byte *data, int len);
-extern void stream_writeString(bitstream_t *bs, char *data, int len);
+extern void stream_writeString(bitstream_t *bs, byte *data, int len);
 extern void stream_writeLongBits(bitstream_t *bs, unsigned long int b, int bits);
 extern void stream_writeVarLong(bitstream_t *bs, unsigned long int b);
 extern void stream_writeBitsData(bitstream_t *bs, byte *data, int bitLen);
@@ -66,7 +66,7 @@ extern unsigned char stream_readByte(bitstream_t* bs);
 extern unsigned int stream_readInt(bitstream_t* bs);
 extern unsigned int stream_readLong(bitstream_t* bs);
 extern long double stream_readDouble(bitstream_t* bs);
-extern void stream_readString(bitstream_t *bs, char *str, int *len);
+extern void stream_readString(bitstream_t *bs, byte *str, int *len);
 extern unsigned long int stream_readLongBits(bitstream_t *bs, int bits);
 extern unsigned long int stream_readVarLong(bitstream_t *bs);
 extern void stream_copyBitsData(bitstream_t *bs, byte *data, int bitLen);
@@ -186,7 +186,8 @@ extern int cvar_getFloat(const char* name);
 extern int cvar_getInt(const char* name);
 extern char *cvar_getString(const char *name);
 extern cvar_t *cvar_get(const char *name, char *value);
-extern void cvar_init();
+extern void cvar_init(void);
+extern void cvar_set2(cvar_t *cv, char *value);
 
 
 /********************SYSTEM********************/
@@ -327,13 +328,13 @@ extern void eng_afterRender();
 
 extern char *getFileString(const char *filename, int zoneid);
 
-extern void openLevelFile();
-extern char *getLevelFileString();
-extern cJSON *getLevelJSON();
-extern void closeLevelFile();
+extern void openLevelFile(void);
+extern char *getLevelFileString(void);
+extern cJSON *getLevelJSON(void);
+extern void closeLevelFile(void);
 
-extern float getScreenWidth();
-extern float getScreenHeight();
+// extern float getScreenWidth(void);
+// extern float getScreenHeight(void);
 
 
 /********************UTIL********************/

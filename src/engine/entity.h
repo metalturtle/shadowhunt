@@ -422,7 +422,7 @@ typedef struct entitySerializer_st
 
     // int (*readInitParam)(int, bitstream_t *);
     int (*readInitParam)(bitstream_t *);
-    int (*applyInitParam)();
+    int (*applyInitParam)(void);
     int (*writeInitParam)(int, int, bitstream_t *);
     void (*removeEntity)(int);
 
@@ -454,7 +454,7 @@ extern void ent_setSerializer(
     int (*readState)(int, bitstream_t *, byte *),
     int (*writeState)(int entID, bitstream_t *, byte *stateBm, int conID),
     int (*readInitParam)(bitstream_t *),
-    int (*applyInitParam)(),
+    int (*applyInitParam)(void),
     int (*writeInitParam)(int, int, bitstream_t *),
     void (*removeEntity)(int)
     );

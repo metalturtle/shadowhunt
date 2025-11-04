@@ -1,0 +1,1 @@
+cmake --build build && ./build/unix_main

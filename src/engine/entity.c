@@ -221,7 +221,8 @@ void ent_readNewEntList(
             continue;
     
         
-        clientEntID = entSerializer->applyInitParam(clientEntID);
+        // clientEntID = entSerializer->applyInitParam(clientEntID);
+        clientEntID = entSerializer->applyInitParam();
 
         // call the function of the serializer that reads initialization
         // params and creates entities
@@ -855,14 +856,14 @@ int ent_addVectorEntity()
 
     vec3xyz(entPos->pos, 300, 330, 300);
     vec3xyz(moveEnt->pos, 300, 330, 300);
-    rect2xywh(moveEnt->rect, -5, -5, 10, 10);
+    rect2xywh(&moveEnt->rect, -5, -5, 10, 10);
 
     vec3set(moveEnt->pos, moveEnt->pos);
     vec3xyz(moveEnt->dir, 0, 0, 0);
 
     vec3set(sprite->pos, moveEnt->pos);
     // rect2set(sprite->rect, moveEnt->bound);
-    rect2xywh(sprite->rect, -5, -5, 10, 10);
+    rect2xywh(&sprite->rect, -5, -5, 10, 10);
     startTimer(endTimer, 200);
     zmemset(posIntp, 0, sizeof(positionInterpolate_t));
     zmemset(angIntp, 0, sizeof(angleInterpolate_t));
@@ -1003,6 +1004,7 @@ void ent_initKillList()
 int ent_addKillID(int entID)
 {
     vecpush(killIDList.entIDList, int, entID);
+    return 0;
 }
 void ent_resetKillList()
 {

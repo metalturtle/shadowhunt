@@ -6,7 +6,7 @@
 
 static netcon_t *nextCon;
 
-static char writeBuffer[MAX_MSGLEN];
+static byte writeBuffer[MAX_MSGLEN];
 
 inputCommandList_t readCmdList;
 
@@ -110,7 +110,7 @@ serv_clrep_t *serv_addClient()
     clRep->con = nextCon;
     clRep->clState = SYS_IDLE;
     bm_setBitVal(server.clRepBitMap.arr, freeid, 1);
-    printf("\n\n\nadding client. conid=%d, clreplist=%d\n", freeid);
+    printf("\n\n\nadding client. conid=%d\n", freeid);
     s2imap_put(server.clRepMap, netAddrToString(nextCon->remoteAddress), freeid);
     startTimer(&clRep->lastRecvTimer, 3000);
     inpCmd_init(inpCmdList);

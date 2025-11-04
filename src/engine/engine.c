@@ -4,7 +4,7 @@
 #include "entity.h"
 #include "../movement/movement.h"
 
-camera_t worldCamera;
+// camera_t worldCamera;
 cl_inputList_t cl_inputList;
 
 vectorEntity_t mainEntity;
@@ -34,6 +34,13 @@ int MATCH_STATE = 0;
 endTimer_t matchTimer;
 
 int MAIN_ENT_ID = -1;
+
+void setRect(SDL_FRect *rect, float x, float y, float w, float h) {
+    rect->x = MIN(x, x + w);;
+    rect->y = MIN(y, y + h);
+    rect->w = fabsf(w);
+    rect->h = fabsf(h);
+}
 
 void inpConfig_storeUsedKeys(char *usedKeys, int usedKeyLen)
 {
@@ -298,7 +305,7 @@ float ray_intersect(float pos[2],float dir[2],float p1[2],float p2[2]) {
 void handle_ray(rayHandleList_t *rayHandleList, int rayID)
 {
 	float rpos[2];
-	float rdir[2];
+	float rdir[3];
     
 
     float u = 1, temp;
@@ -307,6 +314,7 @@ void handle_ray(rayHandleList_t *rayHandleList, int rayID)
     rpos[1] = vecget(rayHandleList->emittedRayList.yList, rayID);
     rdir[0] = vecget(rayHandleList->emittedRayList.xDirList, rayID);
     rdir[1] = vecget(rayHandleList->emittedRayList.yDirList, rayID);
+    rdir[2] = 0;
 
     int fromID = vecget(rayHandleList->emittedRayList.entIDList, rayID);
 
@@ -381,7 +389,7 @@ void handle_ray_hits()
         // animatedSprite_t *sprite = &vecget(vectorEntityList.animSpriteList, toID);
         // sprite->rect[2] /= 2;
         // sprite->rect[3] /= 2;
-        printf("hit entities: %d %d %f \n", fromID, toID, health);
+        printf("hit entities: %d %d %d \n", fromID, toID, health);
     }
 }
 
@@ -429,6 +437,7 @@ void input_func_common(int entID, inputCommandList_t *inpCmdList, entityMove_t *
 
     inpLen = inpCmd_getLen(inpCmdList);
 
+    // printf("checking pos %f %f \n", move);
 
     for(int i = 0; i < inpLen;i++)
     {
@@ -450,6 +459,7 @@ void input_func_common(int entID, inputCommandList_t *inpCmdList, entityMove_t *
         vec3unitvec(vec3, temp);
         vec3mult(vec3, speed);
         vec3add(moveEnt->dir, moveEnt->dir, vec3);
+
 
         moveEnt->speed = 0.2f;
 
@@ -833,7 +843,7 @@ void interpolate_pos()
 
         if(posIntp->timestamp[nextPos] == posIntp->timestamp[lastPos])
         {
-            printf("zero difference betwen timestamp %d %d %d\n", lastPos, nextPos, posIntp->timestamp[nextPos]);
+            printf("zero difference betwen timestamp %d %d %lu\n", lastPos, nextPos, posIntp->timestamp[nextPos]);
             continue;
         }
 
@@ -923,7 +933,7 @@ void interpolate_angle()
 
         if(angIntp->timestamp[nextPos] == angIntp->timestamp[lastPos])
         {
-            printf("zero difference betwen timestamp %d %d %d\n", lastPos, nextPos, angIntp->timestamp[nextPos]);
+            printf("zero difference betwen timestamp %d %d %lu\n", lastPos, nextPos, angIntp->timestamp[nextPos]);
             continue;
         }
 
@@ -1052,6 +1062,7 @@ void set_move_from_pos()
         entityMove_t *moveEnt = &vecget(vectorEntityList.movableList, e);
 
         vec3set(moveEnt->pos, entPos->pos);
+        // printf("checking pos %f %f \n", entPos->pos[0], entPos->pos[1]);
     }
 }
 
@@ -1163,7 +1174,9 @@ void set_camera()
     vec3mult(mouseDist, 7);
 
     vec2add(mouseDist, mouseDist, mainEntPos);
-    vec2sub(mouseDist, mouseDist, worldCamera.window);
+    // vec2sub(mouseDist, mouseDist, worldCamera.window);
+    mouseDist[0] -= cameraRect.x;
+    mouseDist[1] -= cameraRect.y;
     // printf("window pos %f,%f \n", worldCamera.window[0], worldCamera.window[1]);
 
     float distance = vec2length(mouseDist);
@@ -1182,16 +1195,24 @@ void set_camera()
         curSpeed = 5;
     }
     else {
-        rect2xywh(worldCamera.window, diff[0], diff[1], getScreenWidth(), getScreenHeight());
-        vec2add(worldCamera.window, worldCamera.window, mainEntPos); 
+        // cameraRect.x = diff[0];
+        // cameraRect.y = diff[1];
+        setRect(&cameraRect, diff[0], diff[1], engineParameters.windowWidth, engineParameters.windowHeight);
+        cameraRect.x = mainEntPos[0];
+        cameraRect.y += mainEntPos[1];
+        // rect2xywh(&worldCamera.window, diff[0], diff[1], engineParameters.windowWidth, engineParameters.windowHeight);
+        // vec2add(worldCamera.window, worldCamera.window, mainEntPos); 
         return;
     }
 
     vec3mult(mouseDist, curSpeed/distance);
 
-    rect2xywh(worldCamera.window, diff[0], diff[1], getScreenWidth(), getScreenHeight());
-    vec2add(worldCamera.window, worldCamera.window, mainEntPos);
-    vec2add(worldCamera.window, worldCamera.window, mouseDist);
+    setRect(&cameraRect, diff[0], diff[1], engineParameters.windowWidth, engineParameters.windowHeight);
+    cameraRect.x += mainEntPos[0] + mouseDist[0];
+    cameraRect.y += mainEntPos[1] + mouseDist[1];
+    // rect2xywh(&worldCamera.window, diff[0], diff[1], engineParameters.windowWidth, engineParameters.windowHeight);
+    // vec2add(worldCamera.window, worldCamera.window, mainEntPos);
+    // vec2add(worldCamera.window, worldCamera.window, mouseDist);
     // mouseXY[0] = inpCmd->mouseX - 0.5;
     // mouseXY[1] = inpCmd->mouseY - 0.5;
     // mouseXY[2] = 0;
@@ -1209,7 +1230,7 @@ void add_health_pickup()
     if(checkTimer(&pickupSpawnTimer))
     {
         vec3xyz(posToSet.pos, 380, 300, 0);
-        rect2xywh(rectToSet.rect,0,0,10,10);
+        rect2xywh(&rectToSet.rect,0,0,10,10);
 
 
         printf("added pickup \n");
@@ -1650,7 +1671,7 @@ int readPickupInitParam(bitstream_t *bs)
 int applyPickupInitParam()
 {
     entRect_t rectToSet;
-    rect2xywh(rectToSet.rect,0,0,10,10);
+    rect2xywh(&rectToSet.rect,0,0,10,10);
     ent_addPickup(&healthPickupList, pickupPosToSet, rectToSet);
     return 0;
 }
@@ -1680,7 +1701,7 @@ int readWeapPickupInitParam(bitstream_t *bs)
 int applyWeapPickupInitParam()
 {
     entRect_t rectToSet;
-    rect2xywh(rectToSet.rect,0,0,10,10);
+    rect2xywh(&rectToSet.rect,0,0,10,10);
     ent_addPickup(&weaponPickupList, weapPickupPos, rectToSet);
     return 0;
 }
@@ -1893,15 +1914,19 @@ void eng_handleClientEvents()
         ev = getSysEvent();
         switch(ev->type)
         {
-            case SYSEVENT_KEY:
-                cl_keyEvent(ev->value);
-                break;
-            case SYSEVENT_MOUSE:
-                float mouseX = ((float)(ev->value))/10000.0;
-                float mouseY = ((float)(ev->value2))/10000.0;
-                cl_mouseEvent(mouseX, mouseY);
-                break;
-            case SYSEVENT_PACKET:
+        case SYSEVENT_KEY:
+            // printf("checking key event %d \n", ev->value);
+            cl_keyEvent(ev->value);
+            break;
+        case SYSEVENT_MOUSE:
+        {
+            float mouseX = ((float)(ev->value))/10000.0;
+            float mouseY = ((float)(ev->value2))/10000.0;
+            cl_mouseEvent(mouseX, mouseY);
+            break;
+        }
+        case SYSEVENT_PACKET:
+        {
                 buf = (byte *) ev->ptr;
                 len = ev->value;
                 netaddr_t *fromAddr = (netaddr_t *) buf;
@@ -1909,6 +1934,7 @@ void eng_handleClientEvents()
                 cl_packetEvent(fromAddr, buf, len);
                 zidfree(ev->ptr);
                 break;
+        }
             default:
                 break;
         }

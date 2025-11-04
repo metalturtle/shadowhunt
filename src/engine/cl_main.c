@@ -2,7 +2,7 @@
 #include "../basic/world_def.h"
 #include "entity.h"
 
-static char writeBuffer[MAX_MSGLEN];
+static byte writeBuffer[MAX_MSGLEN];
 
 /********************CLIENT FRAME RUN********************/
 

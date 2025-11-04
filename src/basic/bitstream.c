@@ -40,14 +40,14 @@ printf("%d%d%d%d%d%d%d%d",
 }
 #endif
 
-void stream_init(bitstream_t *bs,char *buf, int size)
+void stream_init(bitstream_t *bs,byte *buf, int size)
 {
     bs->bufsize = size;
     bs->buf = buf;
     bs->curbyte = 0;
     bs->curbit = 0;
     bs->datalen = 0;
-};
+}
 
 static void clearbytes(bitstream_t *bs, int inc)
 {
@@ -273,7 +273,7 @@ long double stream_readDouble(bitstream_t* bs)
     return result;
 }
 
-void stream_writeString(bitstream_t *bs, char *str, int len)
+void stream_writeString(bitstream_t *bs, byte *str, int len)
 {
     stream_writeInt(bs, len);
     for(int i = 0; i < len - 1; i++)
@@ -281,10 +281,9 @@ void stream_writeString(bitstream_t *bs, char *str, int len)
     stream_writeByte(bs, '\0');
 }
 
-void stream_readString(bitstream_t *bs, char *str, int *len)
+void stream_readString(bitstream_t *bs, byte *str, int *len)
 {
     int i = 0;
-    char c;
     int slen = stream_readInt(bs);
     if((slen + bs->curbyte) > bs->bufsize)
     {
@@ -329,7 +328,6 @@ void stream_copyBitsData(bitstream_t *bs, byte *data, int bitLen)
 {
     int bigLen = bitLen / 8;
     int smallLen = bitLen % 8;
-    int i;
     bitstream_t databs;
 
     int ceilLen = bigLen;

@@ -3,36 +3,40 @@
 
 #include "../basic/basic.h"
 #include "../basic/world_def.h"
-#include "../engine/engine.h"
 #include "../engine/entity.h"
+#include <SDL3/SDL.h>
+#include <SDL3_image/SDL_image.h>
 
 #define VERTSIZE 32
 
-typedef struct textureImage_st
-{
-    unsigned char *data;
-    int width, height;
-    int colorType;
-} textureImage_t;
+// typedef struct textureImage_st
+// {
+//     unsigned char *data;
+//     int width, height;
+//     int colorType;
+// } textureImage_t;
 
 typedef struct textureRegion_st
 {
+    int texID;
     rect2_t area;
-    float vert[VERTSIZE];
+    // float vert[VERTSIZE];
 } textureRegion_t;
+
+// SDL_Texture *textureList
 
 typedef struct textureImageHandle_st
 {
-    unsigned int *texNameList;
-    textureImage_t *texImgList;
+    // unsigned int *texNameList;
+    SDL_Texture **texImgList;
     int texImgCount;
 } textureImageHandle_t;
 
 typedef struct textureRegionHandle_st
 {
-    int *texIDList;
+    // int *texIDList;
 
-    unsigned int *VAOList;
+    // unsigned int *VAOList;
 
     s2imap_t *texNameMap;
 
@@ -44,15 +48,15 @@ typedef struct spriteHandle_st
 {
     int spriteVAO;
 
-    unsigned int *texNameList;
-    textureImage_t *texImgList;
+    // unsigned int *texNameList;
+    SDL_Texture **texImgList;
     int imgCount;
 
 } spriteHandle_t;
 
 typedef struct animatedSpriteImage_st
 {
-    textureImage_t texImage;
+    SDL_Texture **texImage;
     unsigned int texName;
     int row;
     int col;
@@ -70,29 +74,29 @@ typedef struct animatedSpriteHandle_st
 
 } animatedSpriteHandle_t;
 
-typedef struct graphicsHandle_st
-{
-    int swidth;
-    int sheight;
-    int cellsize;
+// typedef struct graphicsHandle_st
+// {
+//     int swidth;
+//     int sheight;
+//     int cellsize;
 
-    int genzoneid;
+//     int genzoneid;
 
-    unsigned int vertexShader;
-    vector(unsigned int) shaderProgramList;
-    vector(unsigned int) VAOList;
+//     unsigned int vertexShader;
+//     vector(unsigned int) shaderProgramList;
+//     vector(unsigned int) VAOList;
 
-    camera_t camera;
+//     camera_t camera;
 
-} graphicsHandle_t;
+// } graphicsHandle_t;
 
 textureImageHandle_t TexImgHandle;
 textureRegionHandle_t TexRegHandle;
 spriteHandle_t SpriteHandle;
 animatedSpriteHandle_t AnimSpriteHandle;
-graphicsHandle_t GraphicsHandle;
+// graphicsHandle_t GraphicsHandle;
 
-extern camera_t worldCamera;
+// extern camera_t worldCamera;
 extern entitySpriteList_t entSpriteList;
 extern animatedSpriteList_t animSpriteList;
 

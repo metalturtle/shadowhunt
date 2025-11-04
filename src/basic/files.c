@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "../lib/cJSON/cJSON.h"
+#include "../basic/cJSON.h"
 #include "basic.h"
 
 char *getFileString(const char *filename, int zoneid)
