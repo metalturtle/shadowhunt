@@ -4,6 +4,8 @@
 #include "../basic/basic.h"
 #include "../basic/world_def.h"
 #include <SDL3/SDL.h>
+#include <chipmunk/chipmunk.h>
+// #include <box2d/box2d.h>
 
 #define RELSTREAMWINDSIZE 4
 
@@ -155,6 +157,10 @@ typedef struct inputCommand_st
     float inpY;
     float mouseX;
     float mouseY;
+    bool isDone;
+    float deltaTime;
+    SDL_FPoint posCheck;
+    unsigned long timestamp;
 
 } inputCommand_t;
 
@@ -163,7 +169,7 @@ extern float P_X,P_Y;
 typedef struct inputCommandList_st
 {
     inputCommand_t inpCmdArr[INPCMD_MAX_SIZE];
-    unsigned int lastRecordID;
+    // unsigned int lastRecordID;
     unsigned int start;
     unsigned int end;
 
@@ -220,36 +226,38 @@ typedef enum
     CLCMD_END
 } cl_netcmd_e;
 
-typedef struct cl_entStateRecord_st
-{
-    struct cl_entStateRecord_st *next;
-    struct cl_entStateRecord_st *prev;
+// typedef struct cl_entStateRecord_st
+// {
+//     struct cl_entStateRecord_st *next;
+//     struct cl_entStateRecord_st *prev;
     
-    int entID;
+//     int entID;
 
-    recentStreamRecord_t stateRecord;
+//     recentStreamRecord_t stateRecord;
 
-} cl_entStateRecord_t;
+// } cl_entStateRecord_t;
 
-typedef struct cl_entStateRecordList_st
-{
-    cl_entStateRecord_t *viewHead;
-    cl_entStateRecord_t *viewTail;
-    int viewEntLen;
+// typedef struct cl_entStateRecordList_st
+// {
+//     cl_entStateRecord_t *viewHead;
+//     cl_entStateRecord_t *viewTail;
+//     int viewEntLen;
     
-    cl_entStateRecord_t *permanentHead;
-    cl_entStateRecord_t *permanentTail;
-    int permEntLen;
+//     cl_entStateRecord_t *permanentHead;
+//     cl_entStateRecord_t *permanentTail;
+//     int permEntLen;
     
-    int clientEntID;
+//     int clientEntID;
 
-    quickStreamRecord_t newEntRecord;
+//     quickStreamRecord_t newEntRecord;
     
-} cl_entStateRecordList_t;
+// } cl_entStateRecordList_t;
+
 
 
 typedef struct serv_clrep_st
 {
+    int conID;
 
     endTimer_t lastRecvTimer;
     endTimer_t sendTimer;
@@ -258,19 +266,23 @@ typedef struct serv_clrep_st
 
     netcon_t *con;
 
-    cl_entStateRecordList_t entStateRecordList;
+    // cl_entStateRecordList_t entStateRecordList;
 
-    // inputCommandList_t *inputCommandList;
+    inputCommandList_t inputCommandList;
+
+    // clientEntityRecordList_t clientEntRecordList;
+
+    int worldSnapshotID;
 
 } serv_clrep_t;
 
 
-typedef struct cl_inputList_st
-{
-    vector(inputCommandList_t) list;
-    vector(byte) bitmap;
+// typedef struct cl_inputList_st
+// {
+//     vector(inputCommandList_t) list;
+//     vector(byte) bitmap;
 
-} cl_inputList_t;
+// } cl_inputList_t;
 
 typedef struct server_st
 {
@@ -288,7 +300,7 @@ typedef struct server_st
 extern void serv_init();
 extern void serv_frame();
 extern void serv_packetEvent(netaddr_t *fromAddress, byte *data, int len);
-extern void serv_addSyncedEnt(int, int);
+// extern void serv_addSyncedEnt(int, int);
 extern void serv_removeSyncedEnt(int entID, int entType);
 
 /********************CLIENT********************/
@@ -324,7 +336,7 @@ extern void cl_mouseEvent(float x, float y);
 
 extern server_t server;
 extern client_t client;
-extern cl_inputList_t cl_inputList;
+// extern cl_inputList_t cl_inputList;
 
 extern void world_load();
 
@@ -359,4 +371,17 @@ extern EngineParameters engineParameters;
 
 extern SDL_FRect cameraRect;
 extern qbool isStateEmpty(recentStreamNode_t *node, int len);
+
+// extern b2WorldId worldId;
+extern cpSpace *worldId;
+
+extern void sv_setup();
+extern void entSys_setup();
+extern void world_setup();
+
+extern void cl_addInputCmd();
+
+extern void cl_update();
+
+extern void eng_setup();
 #endif

@@ -8,6 +8,8 @@
 #include "../engine/engine.h"
 #include "../render/render.h"
 #include "../render/sdl_render.h"
+// #include <box2d/box2d.h>
+#include <chipmunk/chipmunk.h>
 // #include <math.h>
 
 EngineParameters engineParameters;
@@ -21,10 +23,12 @@ static byte isServer;
 
 byte recvBuffer[MAX_MSGLEN];
 
-int SCREEN_WIDTH;
-int SCREEN_HEIGHT;
+// int SCREEN_WIDTH;
+// int SCREEN_HEIGHT;
 
 cvar_t *cv_isServer;
+// b2WorldId worldId;
+cpSpace *worldId;
 
 /********************EVENTS********************/
 
@@ -160,6 +164,11 @@ void scanSysEvents()
     //     addKeyEvents();
     // }
 
+    for(int i = 0; i < 256; i++) {
+        if(engineParameters.KEYPRESSED[i] == true) {
+            addSysEvent(SYSEVENT_KEY, i, qtrue, NULL);
+        }
+    }
 
     stream_init(&recvbs, recvBuffer, MAX_MSGLEN);
     if((ret = net_getPacket(&fromAddr, &recvbs)) > 0)
@@ -175,7 +184,7 @@ void scanSysEvents()
     }
 }
 
-void initEngineParameters() {
+void initEngineParameters(bool isServer) {
     engineParameters.aspectRatio = 1;
     cameraRect.x = 0;
     cameraRect.y = 0;
@@ -183,7 +192,7 @@ void initEngineParameters() {
     cameraRect.h = engineParameters.aspectRatio * cameraRect.w;
     engineParameters.windowWidth = 800;
     engineParameters.windowHeight = engineParameters.aspectRatio * engineParameters.windowWidth;
-    engineParameters.screenFPS = 60;
+    engineParameters.screenFPS = isServer? 60 : 60;
     engineParameters.tickRate = 1.0/engineParameters.screenFPS;
     engineParameters.gameDeltaTime = 0;
     engineParameters.absoluteDeltaTime =0;
@@ -203,13 +212,11 @@ void initEngineParameters() {
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 {
-    SCREEN_WIDTH = 600;
-    SCREEN_HEIGHT = 600;
+    // SCREEN_WIDTH = 600;
+    // SCREEN_HEIGHT = 600;
     createThreeZones(1024*1024, 1024*1024*20, 1024*1024);
 
     cvar_init();
-
-    initEngineParameters();
 
     int port;
 
@@ -223,6 +230,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         cv_isServer = cvar_get("isServer", "1");
         isServer = 1;
     }
+
+    initEngineParameters(isServer);
 
     int success;
     if(cv_isServer->intval) {
@@ -238,16 +247,34 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     netcon_init();
 
-    openLevelFile();
+    printf("created world\n");
+    // b2WorldDef worldDef = b2DefaultWorldDef();
+    // worldDef.gravity = (b2Vec2){0.0f, 0.0f};  // Set gravity (pointing down)
+    // worldId = b2CreateWorld(&worldDef);
+    // b2World_EnableSleeping(worldId, true);
+    // b2World_EnableWarmStarting(worldId, false);
+    // b2World_EnableContinuous(worldId, false);
+
+    // worldId = cpSpaceNew();
+    // cpSpaceSetGravity(worldId, cpv(0, 0));  // No gravity for top-down
+    // cpSpaceSetIterations(worldId, 10);
+    // cpSpaceSetSleepTimeThreshold(worldId, INFINITY);
+    // cpSpaceSetIdleSpeedThreshold(worldId, 0);
+    // cpSpaceSetCollisionSlop(worldId, 0.0f);
+    // // cpSpaceSetCollisionBias(worldId, cpfpow(1.0f - 0.1f, 60.0f));
+    // cpSpaceSetCollisionBias(worldId, 0.5);
+    // printf("checking value %f \n", cpfpow(1.0f - 0.1f, 60.0f));
 
     eng_init();
+
+    eng_setup();
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("Couldn't initialize SDL: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
     /* Create the window */
-    if (!SDL_CreateWindowAndRenderer(cv_isServer->intval ? "Server" : "Client", SCREEN_WIDTH, SCREEN_HEIGHT, 0, &engineParameters.window, &engineParameters.renderer)) {
+    if (!SDL_CreateWindowAndRenderer(cv_isServer->intval ? "Server" : "Client", engineParameters.windowWidth, engineParameters.windowHeight, 0, &engineParameters.window, &engineParameters.renderer)) {
         SDL_Log("Couldn't create window and renderer: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
@@ -259,12 +286,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     
     if(!cv_isServer->intval) {
 
-        initGraphicsHandleSDL(engineParameters.renderer, SCREEN_WIDTH, SCREEN_HEIGHT, GENERALZONE, qtrue);
-        closeLevelFile();
+        initGraphicsHandleSDL(engineParameters.renderer, engineParameters.windowWidth, engineParameters.windowHeight, GENERALZONE, qtrue);
     }
     else {
-        initGraphicsHandleSDL(engineParameters.renderer, SCREEN_WIDTH, SCREEN_HEIGHT, GENERALZONE, qfalse);
-        closeLevelFile();
+        initGraphicsHandleSDL(engineParameters.renderer, engineParameters.windowWidth, engineParameters.windowHeight, GENERALZONE, qfalse);
     }
 
     return SDL_APP_CONTINUE;
@@ -281,12 +306,13 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
         break;
         case SDL_EVENT_KEY_DOWN:
         // printf("adding sys event %d \n", event->key.key);
-        // engineParameters.KEYPRESSED[event->key.key] = true;
-        addSysEvent(SYSEVENT_KEY, event->key.key, qtrue, NULL);
+        engineParameters.KEYPRESSED[event->key.key] = true;
+
         break;
-        // case SDL_EVENT_KEY_UP:
-        // engineParameters.KEYPRESSED[event->key.key] = false;
-        // break;
+        case SDL_EVENT_KEY_UP:
+        engineParameters.KEYPRESSED[event->key.key] = false;
+        addSysEvent(SYSEVENT_KEY, event->key.key, qfalse, NULL);
+        break;
         case SDL_EVENT_MOUSE_MOTION:
         mouseScreenPos.x = event->motion.x;
         mouseScreenPos.y = event->motion.y;
@@ -294,6 +320,8 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
         // vec_normalize(&mouseScreenPos);
         mouseScreenPos.x /= engineParameters.windowWidth;
         mouseScreenPos.y /= engineParameters.windowHeight;
+
+        // printf("mouseScreenPos %f %f %f %f\n", mouseScreenPos.x, mouseScreenPos.y, event->motion.x, event->motion.y);
 
         int i_xpos = (int)(mouseScreenPos.x * 10000);
         int i_ypos = (int)(mouseScreenPos.y * 10000);
@@ -307,8 +335,25 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
     return SDL_APP_CONTINUE;
 }
 
-// 212501583
-// 181118625
+float toFixedDecimals(float val, int dec) {
+    int ival = val * pow(10, dec);
+    return ival / pow(10, dec);
+}
+
+static void sleepBodyCallback(cpBody *body, void *data) {
+    // Sleeping and waking clears cached contacts
+    if(cpBodyGetType(body) == CP_BODY_TYPE_DYNAMIC) {
+        cpBodySleep(body);
+        cpBodyActivate(body);
+    }
+}
+
+void clearSpaceCache() {
+    // Chipmunk caches contacts in arbiters
+    // We need to clear them for determinism
+    cpSpaceEachBody(worldId, &sleepBodyCallback, NULL);
+}
+
 void engine_sleep() {
     const Uint64 nsPerFrame = 1000000000 / engineParameters.screenFPS;
     Uint64 end = SDL_GetTicksNS() - engineParameters.currentAbsoluteTick;
@@ -322,6 +367,7 @@ void engine_sleep() {
     if(!engineParameters.isPaused) {
         // printf("checking diff %llu \n", currentTick - beginGameTick);
         engineParameters.gameDeltaTime = engineParameters.absoluteDeltaTime * engineParameters.bulletTimeRate;
+        engineParameters.gameDeltaTime = toFixedDecimals(engineParameters.gameDeltaTime, 6);
         Uint64 timePassed = currentTick - beginGameTick;
         timePassed *= engineParameters.bulletTimeRate;
         engineParameters.currentGameTick += (timePassed);
@@ -343,9 +389,9 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
         eng_runFrame();
 
-        eng_afterRender();
-
         renderSDL();
+
+        eng_afterRender();
     }
     else {
         scanSysEvents();
@@ -354,7 +400,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     // runEngine();
 
     // sdl_render();
-
+    // clearSpaceCache();
     engine_sleep();
 
 

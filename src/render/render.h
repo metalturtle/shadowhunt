@@ -21,6 +21,12 @@ typedef struct textureRegion_st
     int texID;
     rect2_t area;
     // float vert[VERTSIZE];
+    float xyList[8];
+    float renderXYList[8];
+    SDL_FColor colorList[4];
+    float uvList[8];
+    byte indexList[6];
+
 } textureRegion_t;
 
 // SDL_Texture *textureList
@@ -49,6 +55,7 @@ typedef struct spriteHandle_st
     int spriteVAO;
 
     // unsigned int *texNameList;
+    // s2imap_t *nameMap;
     SDL_Texture **texImgList;
     int imgCount;
 

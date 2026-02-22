@@ -1,1 +1,1 @@
-cmake --build build && ./build/unix_main
+cmake --build build && ./build/Release/unix_main

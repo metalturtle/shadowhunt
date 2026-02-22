@@ -16,6 +16,10 @@ void netcon_init()
 
 void netcon_setup(netcon_t *con)
 {
+    if (con == NULL) {
+        com_error(ERR_FATAL, "netcon_setup: con is NULL");
+        return;
+    }
     memset(con, 0, sizeof(netcon_t));
     con->incomingSequence = 0;
     con->outgoingSequence = 1;

@@ -57,24 +57,24 @@ extern void ent_remove(int entID);
 
 /********************MOVEMENT********************/
 
-typedef struct entityMove_st
-{
-    float pos[3];
-    float dir[3];
-    float rect[4];
-    float speed;
-} entityMove_t;
+// typedef struct entityMove_st
+// {
+//     float pos[3];
+//     float dir[3];
+//     float rect[4];
+//     float speed;
+// } entityMove_t;
 
-typedef struct entityMoveList_st
-{
-    vector(entityMove_t) entMove;
-    vector(byte) entBm;
+// typedef struct entityMoveList_st
+// {
+//     vector(entityMove_t) entMove;
+//     vector(byte) entBm;
 
-} entityMoveList_t;
+// } entityMoveList_t;
 
 extern void ent_initMoveList();
 extern int ent_addMove(int entID, vec3_t pos, vec3_t dir, rect2_t rect, float speed);
-extern entityMove_t *ent_getMove(int moveID);
+// extern entityMove_t *ent_getMove(int moveID);
 extern void ent_resetMove();
 extern void ent_runMove();
 
@@ -103,14 +103,120 @@ extern void ent_runAllThink();
 
 /********************SERIALIZE********************/
 
+typedef struct ESVar_st {
+    void *buf;
+    uint64_t timestamp;
+} ESVar;
+
+typedef struct ESVarQueue_st {
+    void *varList;
+    uint64_t *tsList;
+    int listSize;
+    int elemSize;
+    int start;
+    int end;
+    void (*interpolate)(void *obj, ESVar *e1, ESVar *e2, uint64_t timestamp);
+} ESVarQueue;
+
+enum ESDefState {
+    ESDEF_COUNT,
+    ESDEF_ADD,
+    ESDEF_WRITETOESV,
+    ESDEF_WRITETOENT,
+    ESDEF_BSWRITESTATE,
+    ESDEF_BSREADSTATE,
+    ESDEF_BSTRACKSTATE
+};
+
+typedef struct ESDiff_st {
+    // int *snapshotIndexes;
+    int snapshotIndex;
+    bool *shouldSend;
+} ESDiff;
+
+typedef struct ESDef_st {
+	ESVarQueue *stateList;
+	int listSize;
+    int snapshotCount;
+    int curDef;
+    uint64_t timestamp;
+    enum ESDefState curState;
+    ESDiff *esDiff;
+    bitstream_t *bs;
+} ESDef;
+
+
+typedef struct NetEntry_st {
+    byte *buf;
+    int size;
+    bool stateSet;
+    int id;
+    struct NetEntry_st *next;
+} NetEntry;
+
+typedef enum netObjState_st {
+    WRITE_INIT,
+    READ_INIT,
+    WRITE,
+    READ,
+    TRACK_WRITE_DIFF,
+    TRACK_READ_DIFF,
+    SETTLE_DIFF
+} netObjState;
+
+typedef struct NetObj_st
+{
+    netObjState curState;
+    NetEntry *entryHead;
+    NetEntry *entryTail;
+    NetEntry *curEntry;
+    bitstream_t *bs;
+    int stateCount;
+    int conID;
+} NetObj;
+
+
+
 typedef struct entityRecord_st
 {
     int entID;
     recentStreamRecord_t recentRecord;
+    ESDiff esDiff;
+    bool isNotPuppet;
+    bool active;
+    // NetObj netObj;
 } entityRecord_t;
 
+// typedef struct clientEntityRecordList_st
+// {
+//     int conID;
+//     // int entID;
+//     // byte *state;
+
+//     vector(entityRecord_t) recordList;
+//     vector(byte) bitmap;
+    
+//     quickStreamRecord_t newEntRecord;
+//     quickStreamRecord_t removeEntRecord;
+
+// } clientEntityRecordList_t;
+
+typedef struct worldSnapshot_st {
+    vector(entityRecord_t) recordList;
+    quickStreamRecord_t newEntRecord;
+    quickStreamRecord_t removeEntRecord;
+    bool active;
+} worldSnapshot_t;
+
+// typedef struct entityRecord_st
+// {
+//     int entID;
+//     recentStreamRecord_t recentRecord;
+//     // NetObj netObj;
+// } entityRecord_t;
+
 extern void ent_initSerialize(entityRecord_t *entSerialize, int stateSize);
-extern void ent_setStateFlags(int serializerID, int entID, int i, byte flag);
+// extern void ent_setStateFlags(int serializerID, int entID, int i, byte flag);
 // typedef struct entitySerialiseList_st
 // {
 //     vector(entityRecord_t) entSerialize;
@@ -202,7 +308,7 @@ typedef struct animatedSpriteList_st
 /********************INIT********************/
 
 extern void ent_init();
-extern void ent_initRecordList(cl_entStateRecordList_t *entStateRecordList);
+// extern void ent_initRecordList(cl_entStateRecordList_t *entStateRecordList);
 extern int ent_createEnt(int createId, void *);
 
 
@@ -240,7 +346,7 @@ typedef struct renderRayList_st
 typedef struct rayEntityList_st
 {
     vector(int) entIDList;
-    vector(entityMove_t) entList;
+    vector(int) entList;
     vector(byte) entBitmap;
 } rayEntityList_t;
 
@@ -262,7 +368,7 @@ typedef struct rayHandleList_st
 
 
 extern void ent_initRayHandleList(rayHandleList_t *rayHandleList);
-extern int ent_addRayEntity(rayHandleList_t *rayHandleList, int entID, entityMove_t *entMove);
+extern int ent_addRayEntity(rayHandleList_t *rayHandleList, int entID);
 extern void ent_removeRayEntity(rayHandleList_t *rayHandleList, int entID);
 extern int ent_emitRay(rayHandleList_t *rayHandleList, int entID, float pos[2], float dir[2]);
 extern void ent_setHitEntity(rayHandleList_t *rayHandleList, int rayID, int fromID, int toID);
@@ -299,9 +405,9 @@ typedef struct rayWeaponHandle_st
 
 extern void ent_initRayWeaponHandle(rayWeaponHandle_t * weaponHandle, weaponType_t weaponType);
 extern qbool ent_handleRayWeaponShoot(rayWeaponHandle_t *weaponHandle, int entID, weaponOnHand_t *weaponOnHand, float pos[2], float angle);
-extern void ent_setRayWeapon(rayWeaponHandle_t *weaponHandle, weaponOnHand_t *weaponOnHand, int entID, entityMove_t *moveEnt);
+extern void ent_setRayWeapon(rayWeaponHandle_t *weaponHandle, weaponOnHand_t *weaponOnHand, int entID);
 extern void ent_resetRayWeapon(rayWeaponHandle_t *weaponHandle);
-extern void ent_setRayWeaponEntity(rayWeaponHandle_t *weaponHandle, weaponOnHand_t *weaponOnHand, entityMove_t *moveEnt);
+extern void ent_setRayWeaponEntity(rayWeaponHandle_t *weaponHandle, weaponOnHand_t *weaponOnHand, int entID);
 extern void ent_removeRayWeapon(rayWeaponHandle_t *weaponHandle, weaponOnHand_t *weaponOnHand);
 
 /********************ENTITY INDEX********************/
@@ -322,37 +428,90 @@ typedef struct angleInterpolate_st
     int first;
 } angleInterpolate_t;
 
-typedef struct vectorEntity_st
-{
-    entVec_t entPos;
-    entityMove_t movable;
-    entitySprite_t sprite;
+// typedef struct vectorEntity_st
+// {
+//     entVec_t entPos;
+//     entityMove_t movable;
+//     entitySprite_t sprite;
 
-} vectorEntity_t;
+// } vectorEntity_t;
 
-typedef struct vectorEntityList_st
-{
-    vector(entVec_t) posList;
-    vector(entityMove_t) movableList;
-    vector(animatedSprite_t) animSpriteList;
-    vector(endTimer_t) shootTimerList;
-    vector(positionInterpolate_t) posInterpolateList;
-    vector(angleInterpolate_t) angleInterpolateList;
-    vector(int) healthList;
-    vector(int) moveIDList;
-    // vector(int) rayEntIDList;
-    vector(weaponOnHand_t) weaponOnHandList;
-    vector(int) weaponShotList;
-    vector(byte) bitmap;
+// typedef struct vectorEntityList_st
+// {
+//     vector(entVec_t) posList;
+//     vector(entityMove_t) movableList;
+//     vector(animatedSprite_t) animSpriteList;
+//     vector(endTimer_t) shootTimerList;
+//     vector(positionInterpolate_t) posInterpolateList;
+//     vector(angleInterpolate_t) angleInterpolateList;
+//     vector(int) healthList;
+//     vector(int) moveIDList;
+//     // vector(int) rayEntIDList;
+//     vector(weaponOnHand_t) weaponOnHandList;
+//     vector(int) weaponShotList;
+//     vector(byte) bitmap;
 
-    i2imap_t *mainEntMap;
+//     i2imap_t *mainEntMap;
 
-} vectorEntityList_t;
+// } vectorEntityList_t;
+
+
+typedef struct VectorEntity_st {
+    int entID;
+    int typeID;
+    SDL_FRect rect;
+    SDL_FPoint pos;
+    cpBody *collision;
+    SDL_FPoint dir;
+    float health;
+    animatedSprite_t animSprite;
+    bool active;
+    int externalID;
+
+    positionInterpolate_t posInterpolate;
+    angleInterpolate_t angleInterpolate;
+} VectorEntity;
+
+typedef struct NetEntity_st {
+    bool isNew;
+    bool isRemoved;
+    bool isPuppet;
+    // NetObj netObj;
+    ESDef esDef;
+    int entID;
+    int clientOwner;
+} NetEntity;
+
+// positionInterpolate_t posInterpolate;
+// angleInterpolate_t angleInterpolate;
+
+#define VECTOR_ENTITY_COUNT 8
+
+extern VectorEntity vectorEntityList[VECTOR_ENTITY_COUNT];
+
+extern i2imap_t *mainEntMap;
+
+// struct Sprite_st {
+//     SDL_FRect rect;
+//     SDL_FPoint center;
+//     SDL_FPoint velocity;
+//     float scale;
+//     float rotate;
+//     int textureID;
+//     float health;
+//     void (*think)(struct Sprite_st *sprite);
+//     int entID;
+//     int typeID;
+//     int spriteID;
+//     b2BodyId collisionID;
+//     int dbID;
+// };
+// typedef struct Sprite_st Sprite;
 
 
 extern void ent_initVectorEntityList();
-extern int ent_addVectorEntity();
-extern void ent_removeVectorEntity(int entID);
+// extern int ent_addVectorEntity(bool isServer);
+// extern void ent_removeVectorEntity(int entID);
 
 
 /********************PICKUPS********************/
@@ -402,92 +561,97 @@ typedef struct entityStateBitmap_st
     byte *state;
 } entityStateBitmap_t;
 
-typedef struct clientEntityRecordList_st
-{
-    int conID;
+// typedef struct clientEntityRecordList_st
+// {
+//     int conID;
+//     // int entID;
+//     // byte *state;
+
+//     vector(entityRecord_t) recordList;
+//     vector(byte) bitmap;
     
-    vector(entityRecord_t) recordList;
-    vector(byte) bitmap;
-    
-    quickStreamRecord_t newEntRecord;
-    quickStreamRecord_t removeEntRecord;
+//     quickStreamRecord_t newEntRecord;
+//     quickStreamRecord_t removeEntRecord;
 
-} clientEntityRecordList_t;
+// } clientEntityRecordList_t;
 
 
-typedef struct entitySerializer_st
-{
-    int (*readState)(int, bitstream_t *, byte *);
-    int (*writeState)(int entID, bitstream_t *, byte *stateBm, int conID);
+// typedef struct entitySerializer_st
+// {
+//     int (*readState)(int, bitstream_t *, byte *);
+//     int (*writeState)(int entID, bitstream_t *, byte *stateBm, int conID);
 
-    // int (*readInitParam)(int, bitstream_t *);
-    int (*readInitParam)(bitstream_t *);
-    int (*applyInitParam)(void);
-    int (*writeInitParam)(int, int, bitstream_t *);
-    void (*removeEntity)(int);
+//     // int (*readInitParam)(int, bitstream_t *);
+//     int (*readInitParam)(bitstream_t *);
+//     int (*applyInitParam)(void);
+//     int (*writeInitParam)(int, int, bitstream_t *);
+//     void (*removeEntity)(int);
 
-    vector(clientEntityRecordList_t) clientRecordList;
-    vector(byte) clientBitmap;
+//     vector(clientEntityRecordList_t) clientRecordList;
+//     vector(byte) clientBitmap;
 
-    vector(entityStateBitmap_t) entityStateList;
-    vector(byte) entityBitmap;
+//     vector(entityStateBitmap_t) entityStateList;
+//     vector(byte) entityBitmap;
 
-    int stateLen;
+//     int stateLen;
 
-    i2imap_t *translateIDMap;
-    i2imap_t *conIDMap;
-
-
-} entitySerializer_t;
+//     i2imap_t *translateIDMap;
+//     i2imap_t *conIDMap;
 
 
-typedef struct entitySerializerList_st
-{
-    entitySerializer_t *list;
-    int length;
-} entitySerializerList_t;
+// } entitySerializer_t;
 
 
-extern void ent_setSerializer(
-    entitySerializer_t *entSerialize,
-    int stateSize,
-    int (*readState)(int, bitstream_t *, byte *),
-    int (*writeState)(int entID, bitstream_t *, byte *stateBm, int conID),
-    int (*readInitParam)(bitstream_t *),
-    int (*applyInitParam)(void),
-    int (*writeInitParam)(int, int, bitstream_t *),
-    void (*removeEntity)(int)
-    );
+// typedef struct entitySerializerList_st
+// {
+//     entitySerializer_t *list;
+//     int length;
+// } entitySerializerList_t;
 
 
-extern void ent_readSerializerList(int conID, netcon_t *con, bitstream_t *bs);
-extern void ent_writeSerializerList(int conID, netcon_t *con, bitstream_t *bs);
+// extern void ent_setSerializer(
+//     entitySerializer_t *entSerialize,
+//     int stateSize,
+//     int (*readState)(int, bitstream_t *, byte *),
+//     int (*writeState)(int entID, bitstream_t *, byte *stateBm, int conID),
+//     int (*readInitParam)(bitstream_t *),
+//     int (*applyInitParam)(void),
+//     int (*writeInitParam)(int, int, bitstream_t *),
+//     void (*removeEntity)(int)
+//     );
+
+
+extern void ent_readSerializerList(serv_clrep_t *newClRep, bitstream_t *bs);
+extern void ent_writeSerializerList(serv_clrep_t *newClRep, bitstream_t *bs);
+void ent_ackSerializerList( serv_clrep_t *newClRep, bitstream_t *bs);
 // extern void ent_writeSerializerList(netcon_t *, bitstream_t *bs);
 // extern void ent_ackSerializerList(bitstream_t *bs);
-extern void ent_ackSerializerList(int conID, netcon_t *con, bitstream_t *bs);
+// extern void ent_ackSerializerList(int conID, netcon_t *con, bitstream_t *bs);
 
 
 extern intPair_t ent_setupEntityForClient(int conID, netcon_t *con);
 extern intPair_t ent_removeEntityFromClient(int conID, netcon_t *con);
-extern void ent_handleClientJoin(int, netcon_t *);
-extern void ent_handleClientLeave(int, netcon_t *);
+// extern void ent_handleClientJoin(int, serv_clrep_t *);
+// extern void ent_handleClientLeave(int, netcon_t *);
+void ent_handleClientLeave(serv_clrep_t *newClRep);
 
 
 extern void ent_addSyncedEntState(int entID, int entType);
-extern void ent_addSyncedEntToClient(int entID, int conID, netcon_t *con, int entType);
+// extern void ent_addSyncedEntToClient(int entID, int conID, netcon_t *con, int entType);
+// extern void ent_addSyncedEntToClient(int entID, serv_clrep_t *newClRep, int entType);
 
-extern void ent_cleanupSerializerState();
+// extern void ent_cleanupSerializerState();
 
 extern void ent_removeSyncedEntState(int entID, int entType);
-extern void ent_removeSyncedEntFromClient(int entID, int conID, netcon_t *con, int entType);
-
+// extern void ent_removeSyncedEntFromClient(int entID, int conID, netcon_t *con, int entType);
+void ent_removeSyncedEntFromClient(int entID, serv_clrep_t *newClRep, int entType);
 
 /********************ENTITY INDEX********************/
 
 extern entityList_t entList;
-extern vectorEntityList_t vectorEntityList;
+// extern vectorEntityList_t vectorEntityList;
 
-extern entitySerializerList_t entSerializerList;
+// extern entitySerializerList_t entSerializerList;
 
 
 extern entitySpriteList_t entSpriteList;
@@ -501,4 +665,117 @@ extern killIDList_t killIDList;
 
 extern rayWeaponHandle_t rayWeaponHandle;
 
+
+extern void initNetworkEntity(NetObj *netObj, VectorEntity *ent, bool isWrite);
+extern void handleNetworkEntity(VectorEntity *ent, NetObj *netObj) ;
+extern void setupNetworkEntity(NetObj *netObj, VectorEntity *ent, bitstream_t *bs, int state) ;
+// extern void setNetworkEntityChanged(NetObj *netObj, byte *stateBm, int size);
+extern void setNetworkEntityChanged(NetObj *netObj, byte *stateBm);
+
+// extern b2BodyId createBox(float x, float y, float width, float height) ;
+extern void createEdgeBoundary(float x, float y, float width, float height) ;
+extern cpBody* createCircle(float x, float y, float radius) ;
+extern void moveEntityWithCollision(VectorEntity *vecEnt, float deltaTime);
+extern void moveCollision(VectorEntity *vecEnt, float deltaTime) ;
+extern void handleMove(SDL_FPoint *pos, SDL_FPoint *dir);
+extern float check_intersection(float pos[2], float dir[2], float wall[4]);
+
+typedef struct SaveDataHandler_st {
+    // sqlite3_stmt *stmt;
+    int spriteDBID;
+} SaveDataHandler;
+
+typedef struct SpriteFactory_st {
+    int typeID;
+
+    // vector(clientEntityRecordList_t) clientRecordList;
+    // vector(byte) clientBitmap;
+
+    // vector(entityStateBitmap_t) entityStateList;
+    // vector(byte) entityBitmap;
+
+    int stateLen;
+
+    // i2imap_t *conIDMap;
+
+    void (*setup)(VectorEntity *sprite, SaveDataHandler*);
+void (*think)(VectorEntity *vecEnt, bool isServer, inputCommand_t *inpCmd);
+    void (*cleanup)(VectorEntity *sprite);
+    void (*initState)(ESDef *esDef);
+    void (*processState)(VectorEntity *sprite, ESDef *esDef);
+} SpriteFactory;
+
+extern int createSpriteFactory(
+    void (*setup)(VectorEntity *sprite, SaveDataHandler*),
+    void (*think)(VectorEntity *vecEnt, bool isServer, inputCommand_t *inpCmd),
+    void (*cleanup)(VectorEntity *sprite),
+    void (*initState)(ESDef *esDef),
+    void (*processState)(VectorEntity *sprite, ESDef *esDef)
+);
+extern VectorEntity* addSprite(int typeID, SaveDataHandler *saveDataReader, bool isServer, bool isPuppet);
+
+extern SpriteFactory spriteFactoryList[100];
+
+typedef struct Player_st {
+    int rayEntID;
+    int weaponShot;
+    void (*think)(struct VectorEntity_st *sprite);
+    endTimer_t shootTimer;
+    weaponOnHand_t weaponOnHand;
+    bool active;
+} PlayerData;
+
+extern PlayerData playerDataList[8];
+
+typedef struct Puppet_st {
+    positionInterpolate_t posInterpolate;
+    angleInterpolate_t angleInterpolate;
+    bool active;
+} Puppet;
+
+// extern Puppet puppetList[8];
+
+extern void resetNetworkStateBits(NetObj *netObj);
+
+extern NetEntity netEntityList[VECTOR_ENTITY_COUNT];
+
+extern void resetNetEnt();
+extern void ent_initializeClient(serv_clrep_t *newClRep);
+extern void ent_settleStateDiff();
+extern void ent_initRayRenderList();
+extern VectorEntity* getVectorEntity(int spriteID);
+extern void handleNetEntry(NetObj *netObj, void *ptr, int size, VectorEntity *vecEnt);
+
+extern void addESVar(ESDef *esDef, int elemSize, void (*interpolate)(void *obj, ESVar *e1, ESVar *e2, uint64_t timestamp));
+extern void handleESVar(ESDef *esDef, void *ptr);
+
+/* ESVarQueue functions */
+extern void initESQueue(ESVarQueue *esQueue, int elemSize, int listSize, void (*interpolate)(void *obj, ESVar *e1, ESVar *e2, uint64_t timestamp));
+extern bool isESVQFull(ESVarQueue *esQueue);
+extern bool isESVQEmpty(ESVarQueue *esQueue);
+extern void popESVQueue(ESVarQueue *esQueue);
+extern void getESVQLast(ESVarQueue *esQueue, void *ptr);
+extern void addESVQueue(ESVarQueue *esQueue, void *val, long timestamp);
+
+/* ESDef functions */
+extern void initESDef(ESDef *esDef, int listSize, int snapshotCount);
+extern void setupESDef(ESDef *esDef, enum ESDefState state, ESDiff *esDiff);
+
+typedef struct worldSnapshotList_st {
+    vector(worldSnapshot_t) list;
+} worldSnapshotList_t;
+
+extern worldSnapshotList_t worldSnapshotList;
+
+extern void entSys_init();
+
+extern void entSys_updateServer();
+
+extern void serv_clearInputs();
+
+extern void serv_sendPacketAll();
+
+extern void entSys_updateClient();
+
+extern int neEntSys_initSnapshot();
 #endif

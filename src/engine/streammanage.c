@@ -873,6 +873,10 @@ void streamRecent_init(
 }
 
 
+// void streamRecent_getUnsentState(recentStreamRecord_t *recentRecord, netcon_t *con, byte *stateBm) {
+//     memset(stateBm, 0, recentRecord->stateByteLen);
+
+// }
 /*
 ===============
 streamRecent_writeStateBits
@@ -969,10 +973,10 @@ int streamRecent_writeStateBits(recentStreamRecord_t *recentRecord, bitstream_t 
 
 
     // Write the bits saved in the sentState param to the packet bitstream
-    for(int i = 0; i < recentRecord->stateBitLen; i++)
-    {
-        stream_writeBit(bs, bm_getBitVal(stateBm, i));
-    }
+    // for(int i = 0; i < recentRecord->stateBitLen; i++)
+    // {
+    //     stream_writeBit(bs, bm_getBitVal(stateBm, i));
+    // }
 
 
     // Reset the state bits in the record

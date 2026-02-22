@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include "basic.h"
+#include<SDL3/SDL.h>
+#include <math.h>
 
 void sys_exit(char *fmt, ...)
 {
@@ -619,4 +621,52 @@ void s2imap_remove(s2imap_t *smap, const char *key)
 float func_absFloat(float a)
 {
     return ABS(a);
+}
+
+
+
+void vec_normalize(SDL_FPoint *point) {
+    float length = sqrt(point->x * point->x + point->y * point->y);
+    if(length > 0) {
+        point->x /= length;
+        point->y /= length;
+    }
+}
+
+void vec_multiply(SDL_FPoint *point, float multiplier) {
+    point->x *= multiplier;
+    point->y *= multiplier;
+}
+
+void vec_subtract(SDL_FPoint *a, SDL_FPoint *b) {
+    a->x -= b->x;
+    a->y -= b->y;
+}
+
+void vec_add(SDL_FPoint *a, SDL_FPoint *b) {
+    a->x += b->x;
+    a->y += b->y;
+}
+
+float vec_length(SDL_FPoint *a) {
+    return sqrt(a->x * a->x + a->y * a->y);
+}
+
+void vec_copy(SDL_FPoint *a, SDL_FPoint *b) {
+    a->x = b->x;
+    a->y = b->y;
+}
+
+void vec_copyRectPos(SDL_FPoint *a, SDL_FRect *rect) {
+    a->x = rect->x;
+    a->y = rect->y;
+}
+
+float vec_getAngle(SDL_FPoint *a) {
+    return atan2(a->y, a->x);
+}
+
+void vec_getVecFromAngle(SDL_FPoint *a, float angle) {
+    a->x = sin(angle);
+    a->y = cos(angle);
 }

@@ -461,18 +461,44 @@ void loadTextureAreas(cJSON *jsonTexAreas)
 
         rect2xywh(&texRegList[i].area, x, y, w, h);
 
-        // texRegList[i].vert[0 + voff] = x;
-        // texRegList[i].vert[1 + voff] = y;
-        // texRegList[i].vert[2 + voff] = 0;
-        // voff += 3;
-        // texRegList[i].vert[0 + voff] = 1;
-        // texRegList[i].vert[1 + voff] = 1;
-        // texRegList[i].vert[2 + voff] = 1;
-        // voff += 3;
-        // texRegList[i].vert[0 + voff] = u1;
-        // texRegList[i].vert[1 + voff] = v1;
-        // voff += 2;
+        texRegList[i].xyList[0] = x;
+        texRegList[i].xyList[1] = y;
+        texRegList[i].xyList[2] = x;
+        texRegList[i].xyList[3] = y+h;
+        texRegList[i].xyList[4] = x+w;
+        texRegList[i].xyList[5] = y+h;
+        texRegList[i].xyList[6] = x+w;
+        texRegList[i].xyList[7] = y;
 
+        // texRegList[i].uvList[0] = 0;
+        // texRegList[i].uvList[1] = 0;
+        // texRegList[i].uvList[2] = 0;
+        // texRegList[i].uvList[3] = 1;
+        // texRegList[i].uvList[4] = 1;
+        // texRegList[i].uvList[5] = 1;
+        // texRegList[i].uvList[6] = 1;
+        // texRegList[i].uvList[7] = 0;
+
+        texRegList[i].uvList[0] = u1;
+        texRegList[i].uvList[1] = v1;
+        texRegList[i].uvList[2] = u1;
+        texRegList[i].uvList[3] = v2;
+        texRegList[i].uvList[4] = u2;
+        texRegList[i].uvList[5] = v2;
+        texRegList[i].uvList[6] = u2;
+        texRegList[i].uvList[7] = v1;
+
+        texRegList[i].colorList[0].r = texRegList[i].colorList[0].g = texRegList[i].colorList[0].b = texRegList[i].colorList[0].a = 10;
+        texRegList[i].colorList[1].r = texRegList[i].colorList[1].g = texRegList[i].colorList[1].b = texRegList[i].colorList[1].a = 10;
+        texRegList[i].colorList[2].r = texRegList[i].colorList[2].g = texRegList[i].colorList[2].b = texRegList[i].colorList[2].a = 10;
+        texRegList[i].colorList[3].r = texRegList[i].colorList[3].g = texRegList[i].colorList[3].b = texRegList[i].colorList[3].a = 10;
+        
+        texRegList[i].indexList[0] = 0;
+        texRegList[i].indexList[1] = 1;
+        texRegList[i].indexList[2] = 2;
+        texRegList[i].indexList[3] = 0;
+        texRegList[i].indexList[4] = 2;
+        texRegList[i].indexList[5] = 3;
 
         // texRegList[i].vert[0 + voff] = x;
         // texRegList[i].vert[1 + voff] = y + h;
@@ -577,6 +603,9 @@ void initTexturesSDL(int isClient)
             sdlTex = loadTexture(chartemp);
             printf("checking file name %s %d \n", chartemp, i);
             // printf("after load texture \n");
+
+            SDL_SetTextureScaleMode(sdlTex, SDL_SCALEMODE_NEAREST); 
+
             TexImgHandle.texImgList[i] = sdlTex;
             
             // Store texture pointer in the nameList (reinterpreted as pointer storage)
@@ -591,9 +620,9 @@ void initTexturesSDL(int isClient)
     zidfree(fbuf);
 }
 
-extern void sprite_init();
-extern void sprite_add(char *spriteName, int id, int type);
-extern int sprite_getID(char *spriteName, int type);
+// extern void sprite_init();
+// extern void sprite_add(char *spriteName, int id, int type);
+// extern int sprite_getID(char *spriteName, int type);
 
 /**
  * Initializes sprite system from JSON configuration
@@ -618,7 +647,13 @@ void initSpritesSDL(int isClient)
     int row;
     int col;
     
-    fbuf = getFileString("levels//config//sprite.json", TEMPORARYZONE);
+    char *loadPath;
+    //sboat_small_vertical
+    SDL_asprintf(&loadPath, "%s%s", SDL_GetBasePath(), "levels//config//sprite.json");
+    printf("sprite config %s \n", loadPath);
+
+    fbuf = getFileString(loadPath, TEMPORARYZONE);
+    SDL_free(loadPath);
     
     cJSON *json = cJSON_Parse(fbuf);
     
@@ -632,6 +667,9 @@ void initSpritesSDL(int isClient)
     
     jsonSpriteFolder = cJSON_GetObjectItemCaseSensitive(jsonSpriteList, "folder");
     spriteFolder = cJSON_GetStringValue(jsonSpriteFolder);
+    SDL_asprintf(&spriteFolder, "%s%s", SDL_GetBasePath(), spriteFolder);
+
+    printf("checking sprite folder %s \n", spriteFolder);
     
     SpriteHandle.texImgList = (SDL_Texture **)zidmalloc(PERMANENTZONE, sizeof(SDL_Texture*) * spriteLen);
     // SpriteHandle.texNameList = (unsigned int *)zidmalloc(PERMANENTZONE, sizeof(SDL_Texture *) * spriteLen);
@@ -664,6 +702,9 @@ void initSpritesSDL(int isClient)
             SDL_Texture *sdlTex = NULL;
             // loadTextureSDL(spriteFilePath, &SpriteHandle.texImgList[i], &sdlTex);
             sdlTex = loadTexture(spriteFilePath);
+
+            SDL_SetTextureScaleMode(sdlTex, SDL_SCALEMODE_NEAREST); 
+
             SpriteHandle.texImgList[i] = sdlTex;
         }
         
@@ -819,7 +860,7 @@ void drawSpriteSDL(SDL_Texture *texture, float x, float y, float rect[4], float 
     // destRect.x *= cellsize;
     
     // if(spriteID == 0) 
-    printf("destRect %f %f %f %f\n", destRect.x, destRect.y, destRect.w, destRect.h);
+    // printf("destRect %f %f %f %f\n", destRect.x, destRect.y, destRect.w, destRect.h);
     // Rotation center (relative to destination rectangle)
     // printf("checking size %d %d\n", texture->w, texture->h);
 
@@ -831,7 +872,7 @@ void drawSpriteSDL(SDL_Texture *texture, float x, float y, float rect[4], float 
     
     // Convert angle from radians to degrees
     // float angleDegrees = radiansToDegrees(angle);
-    float angleDegrees = 0;
+    float angleDegrees = angle;
     
     // Render the texture with rotation
     SDL_RenderTextureRotated(sdlRenderer, texture, NULL, &destRect,
@@ -969,6 +1010,28 @@ void renderFontSDL(const char *text, float x, float y)
     }
 }
 
+void renderWorldTexture(textureRegion_t *texReg) {
+    for(int i = 0; i < 8; i+=2) {
+        // texReg->xyList[i]
+        // float screenX, screenY;
+        // worldToScreen(texReg->xyList[i], texReg->xyList[i+1], &screenX, &screenY);
+        texReg->renderXYList[i] = (texReg->xyList[i] - cameraRect.x)*engineParameters.toWindowRatioX;
+        texReg->renderXYList[i+1] = (texReg->xyList[i+1] - cameraRect.y)*engineParameters.toWindowRatioY;
+    }
+    SDL_RenderGeometryRaw(sdlRenderer,
+        TexImgHandle.texImgList[texReg->texID],
+        texReg->renderXYList,
+        sizeof(float) * 2,
+        texReg->colorList,
+        sizeof(SDL_FColor),
+        texReg->uvList,
+        sizeof(float)*2,
+        8,
+        texReg->indexList,
+        6,
+        1);
+}
+
 /**
  * Main render function - SDL version
  * Replaces the OpenGL render() function
@@ -982,7 +1045,8 @@ int renderSDL()
     // Render to main framebuffer
     // bindSDLFrameBuffer(&frameBufferTexture);
     
-    SDL_SetRenderDrawColor(sdlRenderer, 26, 26, 26, 255);
+    // SDL_SetRenderDrawColor(sdlRenderer, 26, 26, 26, 255);
+    SDL_SetRenderDrawColor(sdlRenderer, 200, 26, 26, 255);
     SDL_RenderClear(sdlRenderer);
     
     // Update camera from world camera
@@ -990,20 +1054,26 @@ int renderSDL()
     
     float cameraWindow[4];
     cameraWindow[0] = cameraRect.x; cameraWindow[1] = cameraRect.y; cameraWindow[2] = cameraRect.w; cameraWindow[3] = cameraRect.h;
-    printf("\n\n\n");
+    // printf("\n\n\n");
     for(int i = 0; i < TexRegHandle.texRegCount; i++)
     {
         textureRegion_t *texReg = &TexRegHandle.texRegList[i];
         if(checkRectIntersect(texReg->area, cameraWindow))
         {
 
+
+            // renderWorldTexture(texReg);
+            
+            // drawSpriteSDL(SpriteHandle.texImgList[2], texReg->area[0], texReg->area[1], texReg->area, 0);
+
             // drawRect(i);
-            drawSpriteSDL(TexImgHandle.texImgList[texReg->texID], texReg->area[0], texReg->area[1], texReg->area, 0);
+            // drawSpriteSDL(TexImgHandle.texImgList[texReg->texID], texReg->area[0], texReg->area[1], texReg->area, 0);
         }
     }
 
     // Render walls
     rect2_t wall;
+    // printf("world.worldWallSize %d \n", world.worldWallSize);
     for (int i = 0; i < world.worldWallSize; i++)
     {
         rect2set(wall, world.worldWallArray[i].rect);
@@ -1012,8 +1082,10 @@ int renderSDL()
         bound[2] = wall[2];
         bound[3] = wall[3];
         
-        // drawSpriteSDL(TexImgHandle.texImgList[0], wall[0], wall[1], bound, 0);
-        break;
+        // printf("drawing the wall %f %f %f %f \n", wall[0], wall[1], wall[2], wall[3]);
+        int texID = sprite_getID("rect", SPRITE_TYPE_STATIC);
+        drawSpriteSDL(SpriteHandle.texImgList[texID], wall[0], wall[1], bound, 0);
+        // break;
     }
 
     // Render entity sprites
@@ -1031,7 +1103,13 @@ int renderSDL()
     for (int i = 0; i < vecsize(animSpriteList.renderList); i++)
     {
         animSprite = &vecget(animSpriteList.renderList, i);
+        bound[0] = animSprite->rect[0];bound[1] = animSprite->rect[1];bound[2] = animSprite->rect[2];bound[3] = animSprite->rect[3];
         // drawAnimSpriteSDL(animSprite);
+        // printf("anim sprite xy %f %f %f %f %f %f\n", animSprite->pos[0], animSprite->pos[1], bound[0], bound[1], bound[2], bound[3]);
+
+        int texID = sprite_getID("rect", SPRITE_TYPE_STATIC);
+
+        drawSpriteSDL(SpriteHandle.texImgList[texID], animSprite->pos[0], animSprite->pos[1], bound, animSprite->angle);
     }
     
     // Render debug rays
@@ -1053,7 +1131,11 @@ int renderSDL()
         bound[2] = dist;
         bound[3] = 1;
         
-        // drawSpriteSDL(2, pos[0], pos[1], bound, angle);
+        int texID = sprite_getID("bullet_tracer", SPRITE_TYPE_STATIC);
+        // printf("shooting bullet tracer %d %f\n", texID, rad2deg(angle));
+        
+
+        drawSpriteSDL(SpriteHandle.texImgList[texID], pos[0], pos[1], bound, rad2deg(angle));
     }
     
     // Render framebuffer to screen
@@ -1094,10 +1176,10 @@ int initGraphicsHandleSDL(SDL_Renderer *renderer, int sx, int sy, int genzoneid,
     // GraphicsHandle.genzoneid = genzoneid;
     // GraphicsHandle.cellsize = 10;
 
-    char *bmp_path;
-    SDL_asprintf(&bmp_path, "/Users/metalturtle/Documents/projects/c++/shadowhunt/build/res//boat_fishing_big.png");
-    printf("check path %s \n", bmp_path);
-    testTexture = loadTexture(bmp_path);
+    // char *bmp_path;
+    // SDL_asprintf(&bmp_path, "/Users/metalturtle/Documents/projects/c++/shadowhunt/build/res//boat_fishing_big.png");
+    // printf("check path %s \n", bmp_path);
+    // testTexture = loadTexture(bmp_path);
     
     // rect2xywh(&GraphicsHandle.camera.window, 220, 220,
     //          engineParameters.windowWidth / 10,
@@ -1125,6 +1207,8 @@ int initGraphicsHandleSDL(SDL_Renderer *renderer, int sx, int sy, int genzoneid,
         
         printf("SDL rendering system initialized successfully\n");
     }
+
+    // SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
     
     // printf("graphics handle sdl \n");
     return 0;

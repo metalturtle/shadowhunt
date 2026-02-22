@@ -15,7 +15,7 @@ void cl_addInputCmd()
     inputCommandList_t *inputCommandList;
 
 
-    inputCommandList = &vecget(cl_inputList.list, 0);
+    inputCommandList = &client.clRep.inputCommandList;
 
     if(inpCmd_isFull(inputCommandList))
     {
@@ -67,7 +67,7 @@ void cl_processSysCmd(bitstream_t *readStream)
         client.clRep.clState = SYS_RUN;
         startTimer(&client.clRep.sendTimer, 100);
 
-        inputCommandList_t *inpCmdList = &vecget(cl_inputList.list, 0);
+        inputCommandList_t *inpCmdList = &client.clRep.inputCommandList;
         inpCmd_init(inpCmdList);
 
         printf("setting sending timer \n");
@@ -85,9 +85,11 @@ void cl_ackInput(bitstream_t *readStream)
     inputCommand_t *firstInp = NULL;
 
     // inputCommandList = client.clRep.inputCommandList;
-    inputCommandList = &vecget(cl_inputList.list, 0);
+    inputCommandList = &client.clRep.inputCommandList;
 
     int ackRecordID = stream_readInt(readStream);
+
+    printf("acked record ID %d \n", ackRecordID);
 
 
     // if(ackRecordID <= inputCommandList->lastRecordID)
@@ -136,6 +138,12 @@ void cl_ackInput(bitstream_t *readStream)
     {
         inpCmd_removeFirst(inputCommandList);
     }
+
+    inpLen =  inpCmd_getLen(inputCommandList);
+    for(int i = 0; i < inpLen; i++) {
+        inputCommand_t *inpCmd = inpCmd_get(inputCommandList, i);
+        inpCmd->isDone = false;
+    }
 }
 
 
@@ -147,7 +155,7 @@ void cl_acknowledge()
 
 void cl_readEntities(bitstream_t *readStream)
 {
-    ent_readSerializerList(0, client.clRep.con, readStream);   
+    ent_readSerializerList(&client.clRep, readStream);   
 }
 
 
@@ -235,24 +243,21 @@ void cl_send(bitstream_t *writeStream)
 
 void cl_writeSysCmd(bitstream_t *writeStream)
 {
-    if(client.clRep.clState == SYS_CONNECT)
+    if(client.clRep.clState != SYS_CONNECT)
+        return;
+
+    stream_writeByte(writeStream, CLCMD_SYS);
+    stream_writeByte(writeStream, SYS_CONNECT);
+    
+    printf("send connect packet\n");
+    startTimer(&client.clRep.sendTimer, 100);
+    client.conAttempts++;
+}
+
+void cl_didConnectFail() {
+    if(client.clRep.clState == SYS_CONNECT && client.conAttempts >= 3)
     {
-        if(client.conAttempts < 3)
-        {
-            if(checkTimer(&client.clRep.sendTimer))
-            {
-                stream_writeByte(writeStream, CLCMD_SYS);
-                stream_writeByte(writeStream, SYS_CONNECT);
-                
-                printf("send connect packet\n");
-                startTimer(&client.clRep.sendTimer, 100);
-                client.conAttempts++;
-            }
-        }
-        else
-        {
-            com_error(ERR_FATAL, "failed to connect to server");
-        }
+        com_error(ERR_FATAL, "failed to connect to server");
     }
 }
 
@@ -264,12 +269,10 @@ void cl_writeInput(bitstream_t *writeStream)
 
     if(client.clRep.clState != SYS_RUN)
         return;
-    
-    if(!checkTimer(&client.clRep.sendTimer))
-        return;
+
 
     // inputCommandList = client.clRep.inputCommandList;
-    inputCommandList = &vecget(cl_inputList.list, 0);
+    inputCommandList = &client.clRep.inputCommandList;
 
     inpLen = inpCmd_getLen(inputCommandList);
 
@@ -282,7 +285,7 @@ void cl_writeInput(bitstream_t *writeStream)
 
     stream_writeInt(writeStream, inpCmd->recordID);
     stream_writeInt(writeStream, inpLen);
-    stream_writeInt(writeStream, inputCommandList->lastRecordID );
+    // stream_writeInt(writeStream, inputCommandList->lastRecordID );
 
     // printf("sending last record id %d \n", inputCommandList->lastRecordID);
 
@@ -294,9 +297,11 @@ void cl_writeInput(bitstream_t *writeStream)
 
         int mouseX = (inpCmd->mouseX * 1000);
         int mouseY = (inpCmd->mouseY * 1000);
+        int deltaTimeInt = inpCmd->deltaTime * 1000 * 1000;
 
         stream_writeInt(writeStream, mouseX);
         stream_writeInt(writeStream, mouseY);
+        stream_writeInt(writeStream, deltaTimeInt);
     }
 
 }
@@ -304,9 +309,6 @@ void cl_writeInput(bitstream_t *writeStream)
 
 void cl_writeEntityACK(bitstream_t *writeStream)
 {
-    if(!checkTimer(&client.clRep.sendTimer))
-        return;
-
     if(client.clRep.clState != SYS_RUN)
         return;
 
@@ -319,19 +321,14 @@ void cl_sendPacket()
 {
     bitstream_t writeStream;
 
-    if(client.clRep.clState == SYS_IDLE) {
-        client.clRep.clState = SYS_CONNECT;
-    }
-    
-
+    if(!checkTimer(&client.clRep.sendTimer)) return;
     if(!netcon_shouldSend(client.clRep.con)) {
         printf("window limit \n");
         return;
     }
 
-
-
     stream_init(&writeStream, writeBuffer, MAX_MSGLEN);
+
 
     cl_writeSysCmd(&writeStream);
 
@@ -344,22 +341,7 @@ void cl_sendPacket()
 
 /********************INIT CLIENT********************/
 
-void cl_init()
-{
-    zmemset(&client, 0, sizeof(client));
 
-    client.clRep.con = (netcon_t *) zidmalloc(GENERALZONE, sizeof(netcon_t));
-
-    netcon_setup(client.clRep.con);
-    netAddrSet(&client.clRep.con->remoteAddress, 127, 0, 0, 1, 8000);
-
-    // ent_initRecordList(&client.clRep.entStateRecordList);
-
-    vecinit(GENERALZONE, cl_inputList.list, inputCommandList_t, 1);
-
-
-    client.clRep.clState = SYS_IDLE;
-}
 
 void cl_frame()
 {
@@ -378,4 +360,56 @@ void cl_frame()
     {
         startTimer(&client.clRep.sendTimer, 100);
     }
+}
+
+void cl_init()
+{
+    zmemset(&client, 0, sizeof(client));
+
+    client.clRep.con = (netcon_t *) zidmalloc(GENERALZONE, sizeof(netcon_t));
+
+    netcon_setup(client.clRep.con);
+    netAddrSet(&client.clRep.con->remoteAddress, 127, 0, 0, 1, 8000);
+
+    // ent_initRecordList(&client.clRep.entStateRecordList);
+
+    // vecinit(GENERALZONE, cl_inputList.list, inputCommandList_t, 1);
+
+
+    client.clRep.clState = SYS_IDLE;
+}
+
+void cl_setup() {
+
+}
+
+void cl_update() {
+    // cl_addInputCmd();
+
+    if(client.clRep.clState == SYS_IDLE) {
+        client.clRep.clState = SYS_CONNECT;
+    }
+
+    cl_didConnectFail();
+    
+    // eng_processClientEntities();
+
+    // ent_setAllSpritePos();
+    // ent_handleSprites();
+
+    cl_sendPacket();
+
+
+    if(checkTimer(&client.clRep.sendTimer))
+    {
+        startTimer(&client.clRep.sendTimer, 100);
+    }
+}
+
+void cl_cleanup() {
+
+}
+
+void cl_close() {
+
 }

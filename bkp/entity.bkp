@@ -1,0 +1,1572 @@
+#include "entity.h"
+#include "engine.h"
+#include "../movement/movement.h"
+
+
+s2imap_t *spriteNameMap;
+s2imap_t *animSpriteNameMap;
+
+i2imap_t *translateIDMap;
+
+entityList_t entList;
+VectorEntity vectorEntityList[VECTOR_ENTITY_COUNT];
+NetEntity netEntityList[VECTOR_ENTITY_COUNT];
+
+i2imap_t *mainEntMap;
+
+// entitySerializerList_t entSerializerList;
+
+
+entitySpriteList_t entSpriteList;
+animatedSpriteList_t animSpriteList;
+
+renderRayList_t renderRayList;
+// emittedRayList_t emittedRayList;
+// rayEntityList_t rayEntityList;
+// rayHitList_t rayHitList;
+killIDList_t killIDList;
+// rayHandleList_t rayHandleList;
+rayWeaponHandle_t rayWeaponHandle;
+
+SpriteFactory spriteFactoryList[100];
+static int spriteFactoryCount;
+
+// #define PUPPET_TYPE 0
+
+
+float shootAngleList[8] = {0, -1,3, -5, 4, 2, -1, -2};
+int shootAngListLen = 8;
+
+/********************ENTITY********************/
+
+VectorEntity* getVectorEntity(int spriteID) {
+    return &vectorEntityList[spriteID];
+}
+
+void ent_initEntList()
+{
+    int initSize = ENT_INITSIZE;
+    vecinit(GENERALZONE, entList.entBm, byte, initSize/8);
+    zmemset(entList.entBm.arr, 0, entList.entBm.capacity);
+
+}
+
+int ent_addGlobalEntity()
+{
+    int id;
+
+    int maxSize = vecsize(entList.entBm) * 8;
+    id = bm_findEmpty(entList.entBm.arr, maxSize);
+    
+    if(id < 0) {
+        vecpush(entList.entBm, byte, 0);
+        id = maxSize - 1;
+    }
+
+    bm_setBitVal(entList.entBm.arr, id, 1);
+
+    
+    return id;
+}
+
+
+void ent_removeGlobalEntity(int entID)
+{
+    bm_setBitVal(entList.entBm.arr, entID, 0);
+}
+
+
+/********************SERIALIZE AND NETWORKING********************/
+
+
+// creates a new client entity record list when a new client joins
+// void ent_initClientEntList(int conID, clientEntityRecordList_t *clEntRecordList)
+// {
+//     int initSize = ENT_INITSIZE;
+
+//     // set the connection ID
+//     clEntRecordList->conID = conID;
+
+//     // initialise recordList and bitmap vectors
+//     // recordList contains recent state records of all entities
+//     vecinit(GENERALZONE, clEntRecordList->recordList, entityRecord_t, initSize);
+//     vecinit(GENERALZONE, clEntRecordList->bitmap, byte, initSize/8);
+
+
+//     // initialize quick stream that stores a list of new entities to send
+//     streamQuick_init(&clEntRecordList->newEntRecord, NULL, NULL);
+
+
+//     // initialize quick stream that stores a list of entities to remove
+//     streamQuick_init(&clEntRecordList->removeEntRecord, NULL, NULL);
+// }
+
+
+// void ent_freeClientEntList(clientEntityRecordList_t *clEntRecordList)
+// {
+//     vecfree(clEntRecordList->recordList);
+//     vecfree(clEntRecordList->bitmap);
+
+//     streamQuick_close(&clEntRecordList->newEntRecord);
+//     streamQuick_close(&clEntRecordList->removeEntRecord);
+// }
+
+// initializes the entity serializer
+// void ent_setSerializer(
+//     entitySerializer_t *entSerialize,
+//     int stateSize,
+//     int (*readState)(int, bitstream_t *, byte *),
+//     int (*writeState)(int, bitstream_t *, byte *stateBm, int conID),
+//     // int (*readInitParam)(int, bitstream_t *),
+//     int (*readInitParam)(bitstream_t *),
+//     int (*applyInitParam)(),
+//     int (*writeInitParam)(int, int, bitstream_t *),
+//     void (*removeEntity)(int)
+//     )
+// {
+//     int initSize = ENT_INITSIZE;
+
+    
+//     // save read and write entity state
+//     entSerialize->readState = readState;
+//     entSerialize->writeState = writeState;
+    
+//     //save read and write init entity functions
+//     entSerialize->readInitParam = readInitParam;
+//     entSerialize->applyInitParam = applyInitParam;
+//     entSerialize->writeInitParam = writeInitParam;
+//     entSerialize->removeEntity = removeEntity;
+
+//     //length of the number of states the entity has
+//     entSerialize->stateLen = stateSize;
+
+
+//     // initialize client record list.
+//     // client record list stores list of client entity record list for each client
+//     // client entity records store the client state of entities
+//     vecinit(GENERALZONE, entSerialize->clientRecordList, clientEntityRecordList_t, initSize);
+//     vecinit(GENERALZONE, entSerialize->clientBitmap, byte, initSize/8);
+
+//     // initialise entity state list.
+//     // this is for the server to set the state bits that have changed, and should
+//     // be sent to all clients
+//     vecinit(GENERALZONE, entSerialize->entityStateList, entityStateBitmap_t, initSize);
+//     vecinit(GENERALZONE, entSerialize->entityBitmap, byte, initSize/8);
+
+
+//     // init the entity ID translate map. The server entity IDs
+//     // are mapped to the client entity IDs
+//     entSerialize->translateIDMap = i2imap_init(GENERALZONE);
+
+//     // init the mapping that translates connection id to the
+//     // location in clientRecordList vector
+//     entSerialize->conIDMap = i2imap_init(GENERALZONE);
+
+    
+
+// }
+
+void ent_settleStateDiff() {
+    byte stateBm[32];
+    bitstream_t bs;
+
+    stream_init(&bs, stateBm, 32);
+    for(int i = 0; i < VECTOR_ENTITY_COUNT; i++) {
+        VectorEntity *vecEnt = &vectorEntityList[i];
+        NetEntity *netEnt = &netEntityList[i];
+        if(!vecEnt->active) continue;
+
+        // setupNetworkEntity(&netEnt->netObj, vecEnt, bs, TRACK_READ_DIFF);
+
+        // if(netEnt->isPuppet) {
+        //     spriteFactoryList[vecEnt->typeID].puppetSerializer(vecEnt, &netEnt->netObj);
+        // }
+        // else {
+        //     spriteFactoryList[vecEnt->typeID].serializer(vecEnt, &netEnt->netObj);
+        // }
+
+        setupNetworkEntity(&netEnt->netObj, vecEnt, &bs, TRACK_WRITE_DIFF);
+
+        if(!netEnt->isPuppet) {
+        spriteFactoryList[vecEnt->typeID].serializer(vecEnt, &netEnt->netObj);
+        }
+        else {
+            spriteFactoryList[vecEnt->typeID].puppetSerializer(vecEnt, &netEnt->netObj);
+        }
+
+
+        setupNetworkEntity(&netEnt->netObj, vecEnt, &bs, SETTLE_DIFF);
+        // setNetworkEntityChanged(&netEnt->netObj, stateBm, entSerializer->stateLen);
+        // handleNetworkEntity(&vecEnt->netObj, vecEnt);
+        if(!netEnt->isPuppet) {
+            spriteFactoryList[vecEnt->typeID].puppetSerializer(vecEnt, &netEnt->netObj);
+        }
+        else {
+            spriteFactoryList[vecEnt->typeID].serializer(vecEnt, &netEnt->netObj);
+        }
+    }
+
+
+
+}
+
+// client reads the state of entities that are sent by the server
+void ent_readEntStateList(bitstream_t *bs)
+{
+    byte stateBm[32];
+
+
+    //read the count of entities that are sent
+    int entLen = stream_readInt(bs);
+
+    // if entity count is equal to or less than zero, then return
+    if(entLen <= 0)
+        return;
+
+
+    // read the state of the entities
+    for(int j = 0; j < entLen; j++)
+    {
+        // read the server entity id
+        int remoteEntID = stream_readInt(bs);
+
+        // translate the server entity id to the client entity id
+        int translatedID = i2imap_get(translateIDMap, remoteEntID);
+
+        //read the states that were sent
+        // streamRecent_readStateBits(entSerializer->stateLen, bs, stateBm);
+
+        // call readState function that reads the states sent based
+        // on the state flags
+        // entSerializer->readState(translatedID, bs, stateBm);
+
+        // printf("translatedID %d %d\n", translatedID, remoteEntID);
+        VectorEntity *vecEnt = &vectorEntityList[translatedID];
+        NetEntity *netEnt = &netEntityList[translatedID];
+
+        setupNetworkEntity(&netEnt->netObj, vecEnt, bs, TRACK_READ_DIFF);
+
+        if(netEnt->isPuppet) {
+            spriteFactoryList[vecEnt->typeID].puppetSerializer(vecEnt, &netEnt->netObj);
+        }
+        else {
+            spriteFactoryList[vecEnt->typeID].serializer(vecEnt, &netEnt->netObj);
+        }
+        setupNetworkEntity(&netEnt->netObj, vecEnt, bs, READ);
+        // setNetworkEntityChanged(&netEnt->netObj, stateBm, entSerializer->stateLen);
+        // handleNetworkEntity(&vecEnt->netObj, vecEnt);
+        if(netEnt->isPuppet) {
+            spriteFactoryList[vecEnt->typeID].puppetSerializer(vecEnt, &netEnt->netObj);
+        }
+        else {
+            spriteFactoryList[vecEnt->typeID].serializer(vecEnt, &netEnt->netObj);
+        }
+        
+    }
+}
+
+
+// read list of new entities that should be created
+void ent_readNewEntList(
+    serv_clrep_t *newClRep,
+    bitstream_t *bs
+    )
+{
+    // get the particular client entity record list
+    clientEntityRecordList_t *clEntList = &newClRep->clientEntRecordList;
+
+    
+    // get the number of records that were sent
+    int recordCount = streamQuick_readCount(&clEntList->newEntRecord, bs);
+
+    for(int i = 0; i < recordCount; i++)
+    {
+        // get the server entity id
+        int remoteEntID = stream_readInt(bs);
+        int typeID = stream_readInt(bs);
+        int isOwner = stream_readBit(bs);
+
+        // check if the server entity id already exists, which means
+        // entity is already created
+        int clientEntID = i2imap_get(translateIDMap, remoteEntID);
+
+        if(clientEntID != -1)
+            continue;
+    
+        
+        // clientEntID = entSerializer->applyInitParam(clientEntID);
+        // clientEntID = entSerializer->applyInitParam();
+        printf("client ent id %d %d %d\n", clientEntID, typeID, isOwner);
+        VectorEntity *vecEnt = addSprite(typeID, NULL, false, !isOwner);
+        clientEntID = vecEnt->entID;
+
+        printf("creating entity %d %d \n", remoteEntID, typeID);
+        // if(isOwner) {
+        //     VectorEntity *vecEnt = addSprite(typeID, NULL, false);
+        //     clientEntID = vecEnt->entID;
+        //     printf("creating entity %d %d \n", remoteEntID, typeID);
+        // }
+        // else {
+        //     VectorEntity *vecEnt = addSprite(PUPPET_TYPE, NULL, false);
+        //     clientEntID = vecEnt->entID;
+        //     printf("adding puppet \n");
+        // }
+
+        // call the function of the serializer that reads initialization
+        // params and creates entities
+
+
+        // if no entities are created then skip
+        if(clientEntID < 0)
+            continue;
+
+        // add mapping for the server entity id to the client entity id
+        i2imap_put(translateIDMap, remoteEntID, clientEntID);
+    }
+}
+
+
+// read list of new entities that should be created
+void ent_readRemoveEntList(
+    serv_clrep_t *newClRep,
+    bitstream_t *bs
+    )
+{
+    // get the particular client entity record list
+    clientEntityRecordList_t *clEntList = &newClRep->clientEntRecordList;
+
+    
+    // get the number of records that were sent
+    int recordCount = streamQuick_readCount(&clEntList->removeEntRecord, bs);
+
+
+    for(int i = 0; i < recordCount; i++)
+    {
+        // get the server entity id
+        int remoteEntID = stream_readInt(bs);
+
+
+        // check if the server entity id already exists, which means
+        // entity is already created
+        int clientEntID = i2imap_get(translateIDMap, remoteEntID);
+
+        // if no entities are created then skip
+        if(clientEntID < 0)
+            continue;
+
+
+        VectorEntity *vecEnt = getVectorEntity(clientEntID);
+        
+        spriteFactoryList[vecEnt->typeID].cleanup(vecEnt);
+
+        // add mapping for the server entity id to the client entity id
+        i2imap_remove(translateIDMap, remoteEntID);
+    }
+}
+
+void addEntityRecord(serv_clrep_t *newClRep, VectorEntity *vecEnt) {
+    clientEntityRecordList_t *clEntList = &newClRep->clientEntRecordList;
+    bitstream_t newWriteBs;
+    NetEntity *netEnt = &netEntityList[vecEnt->entID];
+    printf("writing new netEnt \n");
+    int entRecID = vecsize(clEntList->recordList);
+    vecpushempty(clEntList->recordList, entityRecord_t);
+
+    bm_setBitVal(clEntList->bitmap.arr, entRecID, 1);
+    entityRecord_t *entRecord = &vecget(clEntList->recordList, entRecID);
+    entRecord->entID = vecEnt->entID;
+
+    byte *stateChangeBm = (byte *) zidmalloc(GENERALZONE, (int)CEIL(((float)netEnt->netObj.stateCount)/8.0));
+    streamRecent_init(&entRecord->recentRecord, 8, NULL, NULL, stateChangeBm);    
+    // set the entity ID
+    streamQuick_begin(&clEntList->newEntRecord, newClRep->con, &newWriteBs);
+    stream_writeInt(&newWriteBs, vecEnt->entID);
+    stream_writeInt(&newWriteBs, vecEnt->typeID);
+    stream_writeBit(&newWriteBs, netEnt->clientOwner == newClRep->conID);
+    // stream_writeBit(&newWriteBs, netEnt->isPuppet);
+    streamQuick_end(&clEntList->newEntRecord, newClRep->con, &newWriteBs);
+}
+
+// write list of new entities for sending to a client
+void ent_writeNewEntList(serv_clrep_t *newClRep, bitstream_t *bs)
+{
+    // get the client entity record list
+    clientEntityRecordList_t *clEntList = &newClRep->clientEntRecordList;
+    bitstream_t newWriteBs;
+
+    for(int i = 0; i < VECTOR_ENTITY_COUNT; i++) {
+        NetEntity *netEnt = &netEntityList[i];
+        VectorEntity *vecEnt = &vectorEntityList[i];
+
+        if(netEnt->isNew) {
+            addEntityRecord(newClRep, vecEnt);
+        }
+    }
+
+    // if there is nothing to write then return
+    if(streamQuick_getRecordCount(&clEntList->newEntRecord) <= 0) {
+        return;
+    }
+
+
+    // write new entity command
+    stream_writeByte(bs, ENTCMD_NEW);
+
+    // write the stored list of new entities and their initialization params
+    streamQuick_writePacket(&clEntList->newEntRecord, bs, newClRep->con);
+
+    printf("write new entity list %d %d \n", ENTCMD_NEW, clEntList->newEntRecord.recordCount);
+}
+
+
+// write list of new entities for sending to a client
+void ent_writeRemoveEntList(SpriteFactory *entSerializer, serv_clrep_t *newClRep, bitstream_t *bs)
+{
+    // get the client entity record list
+    clientEntityRecordList_t *clEntList = &newClRep->clientEntRecordList;
+
+    
+    // if there is nothing to write then return
+    if(streamQuick_getRecordCount(&clEntList->removeEntRecord) <= 0) {
+        return;
+    }
+
+
+    // write new entity command
+    stream_writeByte(bs, ENTCMD_REMOVE);
+
+    // write the stored list of new entities and their initialization params
+    streamQuick_writePacket(&clEntList->removeEntRecord, bs, newClRep->con);
+}
+
+
+// write a list of entity states for the client
+void ent_writeStateList(SpriteFactory *entSerializer, serv_clrep_t *newClRep, bitstream_t *bs)
+{
+
+    // if(newClRep->conID == 0) {
+    //     // printf("checking ent record %d \n", e);
+    //     return;
+    // }
+
+    byte stateBm[32];
+    // get the client entity record list
+    clientEntityRecordList_t *clEntList = &newClRep->clientEntRecordList;
+
+    // get the count of entities to write
+    int entLen = 0;
+    for(int e = 0; e < vecsize(clEntList->recordList); e++)
+    {
+        if(!bm_getBitVal(clEntList->bitmap.arr, e)) {
+            continue;
+        }
+
+        entLen++;
+    }
+
+
+    // if there are no entities to write, then return
+    if(entLen == 0)
+        return;
+
+
+    // write the entity state cmd
+    stream_writeByte(bs, ENTCMD_STATE);
+
+
+    stream_writeInt(bs, entLen);
+
+    //go through the list of client entity records
+    for(int e = 0; e < vecsize(clEntList->recordList); e++)
+    {
+        if(!bm_getBitVal(clEntList->bitmap.arr, e))
+        {
+            continue;
+        }
+
+        // get the entity record from the client record list
+        entityRecord_t *entRecord = &vecget(clEntList->recordList, e);
+
+
+        // get the entity state that should be sent to all clients
+        // entityStateBitmap_t entState = vecget(entSerializer->entityStateList, entRecord->entID);
+
+
+        // write the entity id
+        stream_writeInt(bs, entRecord->entID);
+
+
+        // save the state bits
+        // streamRecent_setStateBits(&entRecord->recentRecord, entState.state);
+
+
+        // write the entity state to the bitstream
+        streamRecent_writeStateBits(&entRecord->recentRecord, bs, newClRep->con, stateBm);
+
+
+        // write the entity state for the state bits that are set
+        // entSerializer->writeState(entRecord->entID, bs, stateBm, conID);
+
+        VectorEntity *vecEnt = &vectorEntityList[entRecord->entID];
+        NetEntity *netEnt = &netEntityList[entRecord->entID];
+
+        setupNetworkEntity(&netEnt->netObj, vecEnt, bs, TRACK_WRITE_DIFF);
+        setNetworkEntityChanged(&netEnt->netObj, stateBm);
+
+        netEnt->netObj.conID = newClRep->conID;
+        if(netEnt->clientOwner == newClRep->conID) {
+        spriteFactoryList[vecEnt->typeID].serializer(vecEnt, &netEnt->netObj);
+        }
+        else {
+            spriteFactoryList[vecEnt->typeID].puppetSerializer(vecEnt, &netEnt->netObj);
+        }
+
+        setupNetworkEntity(&netEnt->netObj, vecEnt, bs, WRITE);
+        // setNetworkEntityChanged(&vecEnt->netObj, stateBm, entRecord->recentRecord.stateBitLen);
+        // handleNetworkEntity(&vecEnt->netObj, vecEnt);
+        if(netEnt->clientOwner == newClRep->conID) {
+            spriteFactoryList[vecEnt->typeID].serializer(vecEnt, &netEnt->netObj);
+        }
+        else {
+            spriteFactoryList[vecEnt->typeID].puppetSerializer(vecEnt, &netEnt->netObj);
+        }
+    }
+}
+
+
+// All serializers write the list of new entities to create, and the entity state
+void ent_writeSerializerList(serv_clrep_t *newClRep, bitstream_t *bs)
+{
+    // loop through the entity serializer list
+    for(int i = 0; i < spriteFactoryCount; i++)
+    {
+        SpriteFactory *entSerializer = &(spriteFactoryList[i]);
+
+        // write the list of new entities to create
+        ent_writeNewEntList(newClRep, bs);
+
+
+        // write the list of new entities to remove
+        ent_writeRemoveEntList( entSerializer, newClRep, bs);
+        
+
+        // write the entity state
+        ent_writeStateList(entSerializer,newClRep,  bs);
+
+
+        stream_writeByte(bs, ENTCMD_END);
+    }
+}
+
+void ent_initializeClient(serv_clrep_t *newClRep) {
+    clientEntityRecordList_t *clEntList = &newClRep->clientEntRecordList;
+
+    for(int i = 0; i < VECTOR_ENTITY_COUNT; i++) {
+        VectorEntity *vecEnt = &vectorEntityList[i];
+        if(!vecEnt->active) continue;
+
+        addEntityRecord(newClRep, vecEnt);
+
+    }
+    // for(int e = 0; e < vecsize(clEntList->recordList); e++)
+    // {
+    //     if(!bm_getBitVal(clEntList->bitmap.arr, e))
+    //     {
+    //         continue;
+    //     }
+
+    //     // get the entity record from the client record list
+    //     entityRecord_t *entRecord = &vecget(clEntList->recordList, e);
+
+    // }
+}
+
+// void ent_cleanupSerializerState()
+// {
+//     for(int i = 0; i < spriteFactoryCount; i++)
+//     {
+//         SpriteFactory *entSerializer = &(spriteFactoryList[i]);
+//         for(int j = 0; j < vecsize(entSerializer->entityStateList); j++)
+//         {
+//             if(!bm_getBitVal(entSerializer->entityBitmap.arr, j))
+//             {
+//                 continue;
+//             }
+
+//             entityStateBitmap_t *entState = &vecget(entSerializer->entityStateList, j);
+
+
+//             int byteNum = (int)CEIL(((float)entSerializer->stateLen)/8.0);
+//             for(int b = 0; b < byteNum; b++)
+//             {
+//                 entState->state[b] = 0;
+//             }
+//         }
+//     }
+// }
+
+// read the commands for creating, reading state of entities
+void ent_readSerializerList(serv_clrep_t *newClRep, bitstream_t *bs)
+{
+    byte cmd;
+    while((cmd = stream_readByte(bs)) != ENTCMD_END)
+    {
+        // printf("checking cmd %d \n", cmd);
+        switch(cmd)
+        {
+            case ENTCMD_NEW:
+                ent_readNewEntList(newClRep, bs);
+                break;
+            case ENTCMD_REMOVE:
+                ent_readRemoveEntList(newClRep, bs);
+                break;
+            case ENTCMD_STATE:
+                ent_readEntStateList(bs);
+                break;
+            default:
+                com_error(ERR_FATAL, "Error: wrong ent command received %d %d %d\n", cmd, ENTCMD_STATE, ENTCMD_NEW);
+        }
+    }
+}
+
+
+// go through all entity records of a client, and acknowledge entity states sent
+void ent_ackSerializerList( serv_clrep_t *newClRep, bitstream_t *bs)
+{
+    // loop through the list of entity serializers
+    for(int i = 0; i < spriteFactoryCount; i++)
+    {
+        SpriteFactory *entSerializer = &(spriteFactoryList[i]);
+
+
+        // get the client entity record list
+    
+        clientEntityRecordList_t *clEntList = &newClRep->clientEntRecordList;
+
+
+        streamQuick_acknowledge(&(clEntList->newEntRecord), newClRep->con);
+
+        streamQuick_acknowledge(&(clEntList->removeEntRecord), newClRep->con);
+
+        // loop through the entity records for the client
+        for(int e = 0; e < vecsize(clEntList->recordList); e++)
+        {
+           if(!bm_getBitVal(clEntList->bitmap.arr, e))
+            {
+                continue;
+            }
+
+
+            // get the entity record and call acknowledge, for the states
+            // that were recieved by the client
+            entityRecord_t *entRecord = &vecget(clEntList->recordList, e);
+            streamRecent_acknowledge(&(entRecord->recentRecord), newClRep->con);
+        }
+    }
+}
+
+// set the state flags for the entity, that should be sent to all clients
+// void ent_setStateFlags(int serializerID, int entID, int i, byte flag)
+// {
+//     SpriteFactory *entSerializer = &(spriteFactoryList[serializerID]);
+//     entityStateBitmap_t entStateBM = vecget(entSerializer->entityStateList, entID);
+//     bm_setBitVal(entStateBM.state, i, flag);
+// }
+
+
+// create client entity list for each serializer
+void ent_handleClientJoin(int conID, serv_clrep_t *newClRep)
+{
+    clientEntityRecordList_t *clEntRecordList;
+    bitstream_t bs;
+
+    clEntRecordList = &newClRep->clientEntRecordList;
+
+    ent_initClientEntList(conID, clEntRecordList);
+
+    for(int i = 0; i < 8; i++) {
+        VectorEntity *vecEnt = &vectorEntityList[i];
+        if(!vecEnt->active) continue;
+
+        int entRecID = vecsize(clEntRecordList->recordList);
+        vecpushempty(clEntRecordList->recordList, entityRecord_t);
+
+        bm_setBitVal(clEntRecordList->bitmap.arr, entRecID, 1);
+        entityRecord_t *entRecord = &vecget(clEntRecordList->recordList, entRecID);
+
+        byte *stateChangeBm = (byte *) zidmalloc(GENERALZONE, (int)CEIL(((float)8)/8.0));
+        streamRecent_init(&entRecord->recentRecord, 8, NULL, NULL, stateChangeBm);
+
+
+        // set the entity ID
+        entRecord->entID = vecEnt->entID;
+
+
+        //init the quick record for storing new entities and their init params
+
+        streamQuick_begin(&clEntRecordList->newEntRecord, newClRep->con, &bs);
+        stream_writeInt(&bs, vecEnt->entID);
+        stream_writeInt(&bs, vecEnt->typeID);
+        // entSerialize->writeInitParam(entID, conID, &bs);
+
+
+        streamQuick_end(&clEntRecordList->newEntRecord, newClRep->con, &bs);
+        printf("1 adding new entity to the new ent list %d %d \n", conID, vecEnt->entID);
+        // i2imap_put(entSerialize->conIDMap, conID, id);
+    }
+    
+    // loop through serializers
+    // for(int i = 0; i < spriteFactoryCount; i++)
+    // {
+    //     SpriteFactory *entSerialize = &spriteFactoryList[i];
+
+
+    //     // find an empty slot
+    //     int id = bm_findEmpty(entSerialize->clientBitmap.arr, vecsize(entSerialize->clientRecordList));
+
+
+    //     // if no space in the list, then extend the vectors
+    //     if(id < 0)
+    //     {
+    //         printf("pushing to vector \n");
+    //         id = vecsize(entSerialize->clientRecordList);
+    //         vecpush(entSerialize->clientBitmap, byte, 0);
+    //         vecpushempty(entSerialize->clientRecordList, clientEntityRecordList_t);
+    //         // vecpushempty(entSerialize->entityStateList, entityStateBitmap_t);
+    //         printf(" pushed to vector\n");
+    //     }
+
+
+    //     //get the client entity record list
+    //     clEntRecordList = &vecget(entSerialize->clientRecordList, id);
+
+
+    //     // initialize the client entity record list
+    //     ent_initClientEntList(conID, clEntRecordList);
+
+    //     i2imap_put(entSerialize->conIDMap, conID, id);
+
+    //     bm_setBitVal(entSerialize->clientBitmap.arr, id, 1);
+
+
+    //     int bmSize = 0;
+    //     for(int j = 0; j < vecsize(entSerialize->entityStateList); j++)
+    //     {
+    //         if(!bm_getBitVal(entSerialize->entityBitmap.arr, j)) {
+    //             continue;
+    //         }
+
+    //         bmSize += 1;
+    //     }
+
+
+    //     for(int j = 0; j < bmSize; j++)
+    //     {
+    //         vecpush(clEntRecordList->bitmap, byte, 0);
+    //     }
+    //     printf("pushed bitmap\n");
+
+
+    //     for(int j = 0; j < vecsize(entSerialize->entityStateList); j++)
+    //     {
+    //         if(!bm_getBitVal(entSerialize->entityBitmap.arr, j)) {
+    //             continue;
+    //         }
+
+
+    //         int entRecID = vecsize(clEntRecordList->recordList);
+    //         vecpushempty(clEntRecordList->recordList, entityRecord_t);
+    //         printf("push empty\n");
+
+
+    //         bm_setBitVal(clEntRecordList->bitmap.arr, entRecID, 1);
+
+
+    //         entityRecord_t *entRecord = &vecget(clEntRecordList->recordList, entRecID);
+
+    //         // allocate a state change bitmap. Init the state record in the
+    //         // ent record object
+    //         byte *stateChangeBm = (byte *) zidmalloc(GENERALZONE, (int)CEIL(((float)entSerialize->stateLen)/8.0));
+    //         streamRecent_init(&entRecord->recentRecord, entSerialize->stateLen, NULL, NULL, stateChangeBm);
+
+
+    //         int entID = j;
+
+    //         // set the entity ID
+    //         entRecord->entID = entID;
+
+
+    //         //init the quick record for storing new entities and their init params
+
+    //         streamQuick_begin(&clEntRecordList->newEntRecord, con, &bs);
+    //         stream_writeInt(&bs, entID);
+    //         stream_writeInt(&bs, 0);
+    //         // entSerialize->writeInitParam(entID, conID, &bs);
+
+
+    //         streamQuick_end(&clEntRecordList->newEntRecord, con, &bs);
+    //         printf("1 adding new entity to the new ent list %d %d \n", conID, entID);
+
+
+    //         // entRecord = &vecget(clEntRecordList->recordList, vecsize(clEntList->recordList) - 1);
+    //         // freeid = vecsize(clEntRecordList->recordList) - 1;
+    //     }
+    // }
+}
+
+
+// void ent_addSyncedEntState(int entID, int entType)
+// {
+//     SpriteFactory *entSerialize = &spriteFactoryList[entType];
+//     if(entID == vecsize(entSerialize->entityStateList)) {
+//         vecpushempty(entSerialize->entityStateList, entityStateBitmap_t);
+//     }
+
+//     entityStateBitmap_t *entStateBitmap = &vecget(entSerialize->entityStateList, entID);
+//     entStateBitmap->state = (byte *) zidmalloc(GENERALZONE, (int)CEIL(((float)entSerialize->stateLen)/8.0));
+//     bm_setBitVal(entSerialize->entityBitmap.arr, entID, 1);
+// }
+
+
+// add entity records for all clients
+// void ent_addSyncedEntToClient(int entID, serv_clrep_t *newClRep, int entType)
+// {
+//     bitstream_t bs;
+
+//     SpriteFactory *entSerializer = &(spriteFactoryList[entType]);
+
+
+//     // get the client entity record list
+//     clientEntityRecordList_t *clEntList = &newClRep->clientEntRecordList;
+
+
+//     // check if there is an unused entity record
+//     int freeid = -1;
+//     entityRecord_t *entRecord = NULL;
+//     for(int e = 0; e < vecsize(clEntList->recordList); e++)
+//     {
+//         if(!bm_getBitVal(clEntList->bitmap.arr, e))
+//         {
+//             freeid = e;
+//             entRecord = &vecget(clEntList->recordList, e);
+//             break;
+//         }
+//     }
+
+
+//     // if no unused entity record, then extend vector
+//     if(entRecord == NULL)
+//     {
+//         freeid = vecsize(clEntList->recordList);
+//         vecpush(clEntList->bitmap, byte, 0);
+//         vecpushempty(clEntList->recordList, entityRecord_t);
+//         entRecord = &vecget(clEntList->recordList, freeid);
+//     }
+
+
+//     bm_setBitVal(clEntList->bitmap.arr, freeid, 1);
+
+
+//     // allocate a state change bitmap. Init the state record in the
+//     // ent record object
+//     byte *stateChangeBm = (byte *) zidmalloc(GENERALZONE, (int)CEIL(((float)entSerializer->stateLen)/8.0));
+//     streamRecent_init(&entRecord->recentRecord, entSerializer->stateLen, NULL, NULL, stateChangeBm);
+
+
+//     // set the entity ID
+//     entRecord->entID = entID;
+//     // entRecord->netObj
+
+//     //init the quick record for storing new entities and their init params
+//     streamQuick_begin(&clEntList->newEntRecord, newClRep->con, &bs);
+//     stream_writeInt(&bs, entID);
+//     stream_writeInt(&bs, 0);
+//     // entSerializer->writeInitParam(entID, conID, &bs);
+//     streamQuick_end(&clEntList->newEntRecord, newClRep->con, &bs);
+//     printf("2 adding new entity to the new ent list %d \n", entID);
+// }
+
+
+void ent_removeSyncedEntState(int entID, int entType)
+{
+    // SpriteFactory *entSerialize = &spriteFactoryList[entType];
+    // entityStateBitmap_t *entStateBitmap = &vecget(entSerialize->entityStateList, entID);
+    // zidfree(entStateBitmap->state);
+    // bm_setBitVal(entSerialize->entityBitmap.arr, entID, 0);
+}
+
+void ent_handleClientLeave(serv_clrep_t *newClRep)
+{
+    clientEntityRecordList_t *clEntList = &newClRep->clientEntRecordList;
+
+    vecfree(clEntList->recordList);
+    vecfree(clEntList->bitmap);
+
+    streamQuick_close(&clEntList->newEntRecord);
+    streamQuick_close(&clEntList->removeEntRecord);
+}
+
+void ent_removeSyncedEntFromClient(int entID, serv_clrep_t *newClRep, int entType)
+{
+    bitstream_t bs;
+    clientEntityRecordList_t *clEntList = &newClRep->clientEntRecordList;
+
+
+    for(int e = 0; e < vecsize(clEntList->recordList); e++)
+    {
+        if(!bm_getBitVal(clEntList->bitmap.arr, e))
+            continue;
+
+        
+        entityRecord_t *entRecord = &vecget(clEntList->recordList, e);
+
+        if(entRecord->entID == entID)
+        {
+            // zidfree(entRecord->recentRecord.stateChangeBm);
+            streamRecent_close(&entRecord->recentRecord);
+            streamQuick_begin(&clEntList->removeEntRecord, newClRep->con, &bs);
+            stream_writeInt(&bs, entID);
+            streamQuick_end(&clEntList->removeEntRecord, newClRep->con, &bs);
+            bm_setBitVal(clEntList->bitmap.arr, e, 0);
+            break;
+        }
+    }
+}
+
+void resetNetEnt() {
+    for(int i = 0; i < VECTOR_ENTITY_COUNT; i++) {
+        VectorEntity *vecEnt = &vectorEntityList[i];
+        NetEntity *netEnt = &netEntityList[i];
+        if(!vecEnt->active) continue;
+
+        
+        if(netEnt->isNew) {
+            // printf("new entity %d \n", i);
+            netEnt->isNew = false;
+        }
+        if(netEnt->isRemoved) {
+            // printf("removed entity %d \n", i);
+            netEnt->isRemoved = false;
+        }
+    }
+}
+
+/********************SPRITE********************/
+
+void sprite_init()
+{
+    spriteNameMap = s2imap_create(PERMANENTZONE);
+    animSpriteNameMap = s2imap_create(PERMANENTZONE);
+}
+
+void sprite_add(char *spriteName, int id, int type)
+{
+    if(type == SPRITE_TYPE_STATIC)
+    {
+        s2imap_put(spriteNameMap, spriteName, id);
+    }
+    if(type == SPRITE_TYPE_ANIM)
+    {
+        s2imap_put(animSpriteNameMap, spriteName, id);
+    }
+    
+}
+
+int sprite_getID(char *spriteName, int type)
+{
+    if(type == SPRITE_TYPE_ANIM)
+        return s2imap_get(animSpriteNameMap, spriteName);
+
+    return s2imap_get(spriteNameMap, spriteName);
+}
+
+void ent_initSpriteList()
+{
+    vecinit(GENERALZONE, entSpriteList.renderList, entitySprite_t, ENT_INITSIZE);
+
+    vecinit(GENERALZONE, animSpriteList.renderList, animatedSprite_t, ENT_INITSIZE);
+}
+
+
+
+void ent_resetMove()
+{
+    // vecreset(entityMoveList.entID);
+    // vecreset(entityMoveList.dir);
+    // vecreset(entityMoveList.speed);
+}
+
+
+/********************VECTOR ENTITY ********************/
+
+
+void ent_initVectorEntityList()
+{
+    for(int i = 0; i < VECTOR_ENTITY_COUNT; i++) {
+        vectorEntityList[i].active = false;
+    }
+    // inputCommandList_t
+    // int initSize = ENT_INITSIZE;
+
+    // vecinit(GENERALZONE, vectorEntityList.posList, entVec_t, initSize);
+    // vecinit(GENERALZONE, vectorEntityList.movableList, entityMove_t, initSize);
+    // // vecinit(GENERALZONE, vectorEntityList.spriteList, entitySprite_t, initSize);
+    // vecinit(GENERALZONE, vectorEntityList.animSpriteList, animatedSprite_t, initSize);
+    // vecinit(GENERALZONE, vectorEntityList.shootTimerList, endTimer_t, initSize);
+    // vecinit(GENERALZONE, vectorEntityList.moveIDList, int, initSize);
+    // vecinit(GENERALZONE, vectorEntityList.posInterpolateList, positionInterpolate_t, initSize);
+    // vecinit(GENERALZONE, vectorEntityList.angleInterpolateList, angleInterpolate_t, initSize);
+    // // vecinit(GENERALZONE, vectorEntityList.rayEntIDList, int, initSize);
+    // vecinit(GENERALZONE, vectorEntityList.weaponOnHandList, weaponOnHand_t, initSize);
+    // vecinit(GENERALZONE, vectorEntityList.healthList, int, initSize);
+    // vecinit(GENERALZONE, vectorEntityList.weaponShotList, int, initSize);
+    // vecinit(GENERALZONE, vectorEntityList.bitmap, byte, initSize/8);
+    mainEntMap = i2imap_init(GENERALZONE);
+}
+
+// b2BodyId createCircle(float x, float y, float radius) {
+//     b2BodyDef bodyDef = b2DefaultBodyDef();
+//     bodyDef.type = b2_dynamicBody;
+//     bodyDef.position = (b2Vec2){x, y};
+
+//     bodyDef.linearDamping = 0.0f;
+//     bodyDef.angularDamping = 0.0f;
+//     // bodyDef.fixedRotation = true;
+
+//     b2BodyId bodyId = b2CreateBody(worldId, &bodyDef);
+//     b2Circle shipCircle = {{0.0f, 0.0f}, radius};  // center at (0,0), radius 1.0
+//     b2ShapeDef newShapeDef = b2DefaultShapeDef();
+//     newShapeDef.density = 0.2;
+//     newShapeDef.material.friction = 0.0f;
+//     // newShapeDef.enableContactEvents = true;
+//     bodyDef.isBullet = false;
+//     b2CreateCircleShape(bodyId, &newShapeDef, &shipCircle);
+//     return bodyId;
+// }
+
+cpBody* createCircle(float x, float y, float radius) {
+    cpFloat mass = 1.0f;
+    cpFloat moment = cpMomentForCircle(mass, 0, radius, cpvzero);
+    
+    cpBody *body = cpSpaceAddBody(worldId, cpBodyNew(mass, moment));
+    cpBodySetPosition(body, cpv(x, y));
+    cpBodySetVelocityUpdateFunc(body, cpBodyUpdateVelocity);
+    
+    cpShape *shape = cpSpaceAddShape(worldId, cpCircleShapeNew(body, radius, cpvzero));
+    cpShapeSetFriction(shape, 0.0f);
+    cpShapeSetElasticity(shape, 0.0f);
+    
+    return body;
+}
+
+// b2BodyId createBox(float x, float y, float width, float height) {
+//     // printf("create box \n");
+//     b2BodyDef bodyDef = b2DefaultBodyDef();
+//     bodyDef.type = b2_dynamicBody;
+//     bodyDef.position = (b2Vec2){x, y};
+//     b2BodyId bodyId = b2CreateBody(worldId, &bodyDef);
+
+
+//     b2Polygon dynamicBox = b2MakeBox(width, height);
+//     b2ShapeDef shapeDef = b2DefaultShapeDef();
+//     shapeDef.density = 10.0f;
+//     // shapeDef.density = 1.0f;
+//     // shapeDef.friction = 0.3f;
+//     b2CreatePolygonShape(bodyId, &shapeDef, &dynamicBox);
+//     return bodyId;
+// }
+
+// void createEdgeWall(float x1, float y1, float x2, float y2) {
+//     b2BodyDef bodyDef = b2DefaultBodyDef();
+//     bodyDef.position = (b2Vec2){0.0f, 0.0f};  // Edges use absolute coords
+//     b2BodyId wallId = b2CreateBody(worldId, &bodyDef);
+    
+//     b2Segment segment = {{x1, y1}, {x2, y2}};
+//     b2ShapeDef shapeDef = b2DefaultShapeDef();
+//     shapeDef.enableContactEvents = true;
+//     b2CreateSegmentShape(wallId, &shapeDef, &segment);
+// }
+
+void createEdgeWall(float x1, float y1, float x2, float y2) {
+    cpBody *staticBody = cpSpaceGetStaticBody(worldId);
+    
+    cpShape *segment = cpSegmentShapeNew(
+        staticBody,
+        cpv(x1, y1),
+        cpv(x2, y2),
+        0.0f  // or 1.0f for slightly thicker collision
+    );
+    
+    cpShapeSetFriction(segment, 0.0f);
+    cpShapeSetElasticity(segment, 0.0f);
+    
+    cpSpaceAddShape(worldId, segment);
+}
+
+void createEdgeBoundary(float x, float y, float width, float height) {
+    // Bottom
+    createEdgeWall(x, y, x + width, y);
+    // Right
+    createEdgeWall(x + width, y, x + width, y + height);
+    // Top
+    createEdgeWall(x, y + height, x + width, y + height);
+    // Left
+    createEdgeWall(x, y, x, y + height);
+}
+
+
+// int ent_addVectorEntity(bool isServer)
+// {
+//     VectorEntity *vecEnt = NULL;
+//     int entID = -1;
+
+//     for(int i = 0; i < VECTOR_ENTITY_COUNT; i++) {
+//         if(!vectorEntityList[i].active) {
+//             vecEnt = &vectorEntityList[i];
+//             vecEnt->active = true;
+//             entID = i;
+//             break;
+//         }
+//     }
+
+//     if(vecEnt == NULL) {
+//         com_error(ERR_FATAL, "Exceeded vector entity count\n");
+//     }
+
+//     vecEnt->entID = entID;
+//     vecEnt->collision = createCircle(vecEnt->pos.x, vecEnt->pos.y, 5.0f);
+
+
+//     // vecEnt->pos.x = 300;
+//     // vecEnt->pos.y = 330;
+//     // vecEnt->weaponShot = 0;
+//     // vecEnt->rect.x = -5;
+//     // vecEnt->rect.y = -5;
+//     // vecEnt->rect.w = 10;
+//     // vecEnt->rect.h = 10;
+//     // vecEnt->animSprite.rect[0] = vecEnt->animSprite.rect[1] = 0;
+//     // vecEnt->animSprite.rect[2] = 10; vecEnt->animSprite.rect[3] = 10;
+//     // vecEnt->dir.x = 0;
+//     // vecEnt->dir.y = 0;
+//     // vecEnt->health = 100;
+//     // vecEnt->moveID = -1;
+//     // vecEnt->rayEntID = -1;
+
+//     // zmemset(&vecEnt->posInterpolate, 0, sizeof(positionInterpolate_t));
+//     // zmemset(&vecEnt->angleInterpolate, 0, sizeof(angleInterpolate_t));
+
+//     initNetworkEntity(&vecEnt->netObj, vecEnt, isServer);
+//     handleNetworkEntity(vecEnt, &vecEnt->netObj);
+
+
+//     return entID;
+// }
+
+// void ent_removeVectorEntity(int entID)
+// {
+//     VectorEntity *vecEnt = &vectorEntityList[entID];
+//     // int moveID = vecget(vectorEntityList.moveIDList, entID);
+//     // physics_removeBody(moveID);
+
+//     // weaponOnHand_t *weaponOnHand = &vecget(vectorEntityList.weaponOnHandList, entID);
+//     ent_removeRayWeapon(&rayWeaponHandle, &vecEnt->weaponOnHand);
+
+//     // bm_setBitVal(vectorEntityList.bitmap.arr, entID, 0);
+    
+// }
+
+
+int createSpriteFactory(void (*setup
+)(VectorEntity *sprite, SaveDataHandler*), void (*think)(VectorEntity *vecEnt, bool isServer, inputCommand_t *inpCmd), void (*cleanup)(VectorEntity *sprite), void (*serializer)(VectorEntity *sprite, NetObj *netObj), void (*puppetSerializer)(VectorEntity *sprite, NetObj *netObj)) {
+    SpriteFactory *spriteFactory = &spriteFactoryList[spriteFactoryCount];
+    spriteFactory->typeID = spriteFactoryCount;
+    spriteFactory->setup = setup;
+    spriteFactory->think = think;
+    spriteFactory->cleanup = cleanup;
+    spriteFactory->serializer = serializer;
+    spriteFactory->puppetSerializer = puppetSerializer;
+
+    int initSize = 8;
+    // initialize client record list.
+    // client record list stores list of client entity record list for each client
+    // client entity records store the client state of entities
+    // vecinit(GENERALZONE, spriteFactory->clientRecordList, clientEntityRecordList_t, initSize);
+    // vecinit(GENERALZONE, spriteFactory->clientBitmap, byte, initSize/8);
+
+    // initialise entity state list.
+    // this is for the server to set the state bits that have changed, and should
+    // be sent to all clients
+    // vecinit(GENERALZONE, spriteFactory->entityStateList, entityStateBitmap_t, initSize);
+    // vecinit(GENERALZONE, spriteFactory->entityBitmap, byte, initSize/8);
+
+
+    // init the entity ID translate map. The server entity IDs
+    // are mapped to the client entity IDs
+    // spriteFactory->translateIDMap = i2imap_init(GENERALZONE);
+
+    // init the mapping that translates connection id to the
+    // location in clientRecordList vector
+    // spriteFactory->conIDMap = i2imap_init(GENERALZONE);
+    return spriteFactoryCount++;
+}
+
+// int ent_addVectorEntity(bool isServer)
+// {
+//     VectorEntity *vecEnt = NULL;
+//     int entID = -1;
+
+//     for(int i = 0; i < VECTOR_ENTITY_COUNT; i++) {
+//         if(!vectorEntityList[i].active) {
+//             vecEnt = &vectorEntityList[i];
+//             vecEnt->active = true;
+//             entID = i;
+//             break;
+//         }
+//     }
+
+//     if(vecEnt == NULL) {
+//         com_error(ERR_FATAL, "Exceeded vector entity count\n");
+//     }
+
+//     vecEnt->entID = entID;
+//     vecEnt->collision = createCircle(vecEnt->pos.x, vecEnt->pos.y, 5.0f);
+
+
+//     // vecEnt->pos.x = 300;
+//     // vecEnt->pos.y = 330;
+//     // vecEnt->weaponShot = 0;
+//     // vecEnt->rect.x = -5;
+//     // vecEnt->rect.y = -5;
+//     // vecEnt->rect.w = 10;
+//     // vecEnt->rect.h = 10;
+//     // vecEnt->animSprite.rect[0] = vecEnt->animSprite.rect[1] = 0;
+//     // vecEnt->animSprite.rect[2] = 10; vecEnt->animSprite.rect[3] = 10;
+//     // vecEnt->dir.x = 0;
+//     // vecEnt->dir.y = 0;
+//     // vecEnt->health = 100;
+//     // vecEnt->moveID = -1;
+//     // vecEnt->rayEntID = -1;
+
+//     // zmemset(&vecEnt->posInterpolate, 0, sizeof(positionInterpolate_t));
+//     // zmemset(&vecEnt->angleInterpolate, 0, sizeof(angleInterpolate_t));
+
+//     initNetworkEntity(&vecEnt->netObj, vecEnt, isServer);
+//     handleNetworkEntity(vecEnt, &vecEnt->netObj);
+
+
+//     return entID;
+// }
+
+
+VectorEntity* addSprite(int typeID, SaveDataHandler *saveDataReader, bool isServer, bool isPuppet) {
+    VectorEntity *vecEnt = NULL;
+    int entID = -1;
+
+    for(int i = 0; i < VECTOR_ENTITY_COUNT; i++) {
+        if(!vectorEntityList[i].active) {
+            vecEnt = &vectorEntityList[i];
+            vecEnt->active = true;
+            entID = i;
+            break;
+        }
+    }
+
+    if(vecEnt == NULL) {
+        com_error(ERR_FATAL, "Exceeded vector entity count\n");
+    }
+
+    // int id = getFreeID(&freeList);
+    // if(id == -1) return NULL;
+    // Sprite *sprite = &spriteList[id];
+    // if(saveDataReader == NULL) {
+    //     sprite->dbID = lastSpriteDBID++;
+    // }
+    // else {
+    //     sprite->dbID = saveDataReader->spriteDBID;
+    // }
+    vecEnt->typeID = typeID;
+    vecEnt->entID = entID;
+    // vecEnt->shouldPuppet = true;
+    // vecEnt->think = spriteFactoryList[typeID].think;
+
+    SpriteFactory *spriteFactory = &spriteFactoryList[typeID];
+    spriteFactory->setup(vecEnt, saveDataReader);
+
+    NetEntity *netEnt = &netEntityList[entID];
+    netEnt->isNew = true;
+    netEnt->isRemoved = false;
+    netEnt->entID = entID;
+    netEnt->isPuppet = isPuppet;
+
+    memset(&vecEnt->posInterpolate, 0, sizeof(positionInterpolate_t));
+    memset(&vecEnt->angleInterpolate, 0, sizeof(angleInterpolate_t));
+
+    if(!isPuppet) {
+        initNetworkEntity(&netEnt->netObj, vecEnt, isServer);
+        spriteFactory->serializer(vecEnt, &netEnt->netObj);
+    }
+    else {
+        initNetworkEntity(&netEnt->netObj, vecEnt, isServer);
+        spriteFactory->puppetSerializer(vecEnt, &netEnt->netObj);
+    }
+
+    // handleNetworkEntity(vecEnt, &netEnt->netObj);
+    
+
+    return vecEnt;
+}
+
+/********************RAY********************/
+
+void ent_initRayRenderList()
+{
+    int initSize = ENT_INITSIZE;
+    vecinit(GENERALZONE, renderRayList.xList, float, initSize);
+    vecinit(GENERALZONE, renderRayList.yList, float, initSize);
+    vecinit(GENERALZONE, renderRayList.xDirList, float, initSize);
+    vecinit(GENERALZONE, renderRayList.yDirList, float, initSize);
+    vecinit(GENERALZONE, renderRayList.endTimeList, unsigned long int, initSize);
+}
+
+void ent_initRayHandleList(rayHandleList_t *rayHandleList)
+{
+    int initSize = ENT_INITSIZE;
+    
+    emittedRayList_t *emittedRayList = &rayHandleList->emittedRayList;
+    rayEntityList_t *rayEntityList = &rayHandleList->rayEntityList;
+    rayHitList_t *rayHitList = &rayHandleList->rayHitList;
+
+    vecinit(GENERALZONE, emittedRayList->entIDList, int, initSize);
+    vecinit(GENERALZONE, emittedRayList->xList, float, initSize);
+    vecinit(GENERALZONE, emittedRayList->yList, float, initSize);
+    vecinit(GENERALZONE, emittedRayList->xDirList, float, initSize);
+    vecinit(GENERALZONE, emittedRayList->yDirList, float, initSize);
+
+
+    vecinit(GENERALZONE, rayEntityList->entIDList, int, initSize);
+    vecinit(GENERALZONE, rayEntityList->entList, int, initSize);
+    vecinit(GENERALZONE, rayEntityList->entBitmap, byte, initSize/8);
+
+
+    vecinit(GENERALZONE, rayHitList->fromList, int, initSize);
+    vecinit(GENERALZONE, rayHitList->toList, int, initSize);
+    vecinit(GENERALZONE, rayHitList->uList, float, initSize);
+}
+
+
+int ent_addRayEntity(rayHandleList_t *rayHandleList, int entID )
+{
+    int id = bm_findEmpty(rayHandleList->rayEntityList.entBitmap.arr,
+         vecsize(rayHandleList->rayEntityList.entBitmap));
+    if(id < 0)
+    {
+        id = vecsize(rayHandleList->rayEntityList.entList);
+        vecpushempty(rayHandleList->rayEntityList.entList, int);
+        vecpushempty(rayHandleList->rayEntityList.entIDList, int);
+    }
+
+    int rayEntID = vecget(rayHandleList->rayEntityList.entList, id);
+    // vec3set(entMove->pos, setMove->pos);
+    // rect2set(entMove->rect, setMove->rect);
+    // vec3xyz(entMove->dir, 0, 0, 0);
+    vecset(rayHandleList->rayEntityList.entIDList, id, rayEntID);
+
+    bm_setBitVal(rayHandleList->rayEntityList.entBitmap.arr, id, 1);
+    
+    return id;
+}
+
+void ent_removeRayEntity(rayHandleList_t *rayHandleList, int entID)
+{
+    bm_setBitVal(rayHandleList->rayEntityList.entBitmap.arr, entID, 0);
+}
+
+int ent_emitRay(rayHandleList_t *rayHandleList, int entID, float pos[2], float dir[2])
+{
+    int id = vecsize(rayHandleList->emittedRayList.xList);
+    vecpush(rayHandleList->emittedRayList.xList, float, pos[0]);
+    vecpush(rayHandleList->emittedRayList.yList, float, pos[1]);
+    vecpush(rayHandleList->emittedRayList.xDirList, float, dir[0]);
+    vecpush(rayHandleList->emittedRayList.yDirList, float, dir[1]);
+    vecpush(rayHandleList->emittedRayList.entIDList, int, entID);
+
+    return id;
+}
+
+void ent_resetRayList(rayHandleList_t *rayHandleList)
+{
+    vecreset(rayHandleList->emittedRayList.xList);
+    vecreset(rayHandleList->emittedRayList.yList);
+    vecreset(rayHandleList->emittedRayList.xDirList);
+    vecreset(rayHandleList->emittedRayList.yDirList);
+    vecreset(rayHandleList->emittedRayList.entIDList);
+}
+
+void ent_setHitEntity(rayHandleList_t *rayHandleList, int rayID, int fromID, int toID)
+{
+    vecpush(rayHandleList->rayHitList.fromList, int, fromID);
+    vecpush(rayHandleList->rayHitList.toList, int, toID);
+}
+
+void ent_resetHitEntityList(rayHandleList_t *rayHandleList)
+{
+    vecreset(rayHandleList->rayHitList.fromList);
+    vecreset(rayHandleList->rayHitList.toList);   
+}
+
+
+void ent_initKillList()
+{
+    int initSize = ENT_INITSIZE;
+    vecinit(GENERALZONE, killIDList.entIDList, int, initSize);
+}
+int ent_addKillID(int entID)
+{
+    vecpush(killIDList.entIDList, int, entID);
+    return 0;
+}
+void ent_resetKillList()
+{
+    vecreset(killIDList.entIDList);
+}
+
+/********************WEAPON********************/
+
+void ent_initRayWeaponHandle(rayWeaponHandle_t * weaponHandle, weaponType_t weaponType)
+{
+    ent_initRayHandleList(&weaponHandle->rayHandleList);
+    weaponHandle->weaponType = weaponType;
+}
+
+void ent_setRayWeapon(rayWeaponHandle_t *weaponHandle, weaponOnHand_t *weaponOnHand, int entID)
+{
+    startTimer(&weaponOnHand->currentShootEndTime, 0);
+    startTimer(&weaponOnHand->nextShootEndTime, 0);
+    weaponOnHand->curAngID = 0;
+    weaponOnHand->ammoCount = 100;
+    weaponOnHand->rayEntID = ent_addRayEntity(&weaponHandle->rayHandleList, entID);
+}
+
+void ent_setRayWeaponEntity(rayWeaponHandle_t *weaponHandle, weaponOnHand_t *weaponOnHand, int entID)
+{
+    // entityMove_t *rayEnt;
+    // rayEnt = &vecget(weaponHandle->rayHandleList.rayEntityList.entList, weaponOnHand->rayEntID);
+    // vec3set(rayEnt->pos, moveEnt->pos);
+}
+
+void ent_removeRayWeapon(rayWeaponHandle_t *weaponHandle, weaponOnHand_t *weaponOnHand)
+{
+    startTimer(&weaponOnHand->currentShootEndTime, 0);
+    startTimer(&weaponOnHand->nextShootEndTime, 0);
+    weaponOnHand->ammoCount = 0;
+    ent_removeRayEntity(&weaponHandle->rayHandleList, weaponOnHand->rayEntID);
+}
+
+qbool ent_handleRayWeaponShoot(rayWeaponHandle_t *weaponHandle, int entID, weaponOnHand_t *weaponOnHand, float pos[2], float angle)
+{
+    float dir[3];
+    if(weaponOnHand->ammoCount <= 0)
+        return qfalse;
+
+    if(!checkTimer(&weaponOnHand->currentShootEndTime))
+        return qfalse;
+
+    if(!checkTimer(&weaponOnHand->nextShootEndTime))
+        return qfalse;
+
+    startTimer(&weaponOnHand->currentShootEndTime, weaponHandle->weaponType.currentShootDelay);
+    startTimer(&weaponOnHand->nextShootEndTime, weaponHandle->weaponType.nextShootDelay);
+
+    // angle += deg2rad(shootAngleList[weaponOnHand->curAngID & (shootAngListLen - 1)]);
+    // weaponOnHand->curAngID++;
+    weaponOnHand->angle = angle;
+    angle = deg2rad(angle);
+
+    vec3setang2(dir, angle);
+    vec3mult(dir, 50);
+
+    ent_emitRay(&weaponHandle->rayHandleList, entID, pos, dir);
+
+    // weaponOnHand->ammoCount -= 1;
+
+    return qtrue;
+}
+
+void ent_resetRayWeapon(rayWeaponHandle_t *weaponHandle)
+{
+    ent_resetRayList(&weaponHandle->rayHandleList);
+}
+
+void ent_initVectorRayWeapon()
+{
+    weaponType_t weaponType;
+
+    weaponType.maxAmmoCount = 10;
+    weaponType.accuracy = 0;
+    weaponType.currentShootDelay = 0;
+    weaponType.nextShootDelay = 100;
+    weaponType.onHandCapacity = 10;
+    weaponType.totalCapacity = 10;
+
+    ent_initRayWeaponHandle(&rayWeaponHandle, weaponType);
+}
+
+/********************PICKUPS********************/
+
+// typedef struct PickupList_st
+// {
+//     vector(entVec_t) posList;
+//     vector(entRect_t) rectList;
+//     vector(byte) bitmap;
+// } PickupList_t;
+
+
+void ent_initPickupList(pickupList_t *pickupList)
+{
+    int initSize = ENT_INITSIZE;
+    vecinit(GENERALZONE, pickupList->posList, entVec_t, initSize);
+    vecinit(GENERALZONE, pickupList->rectList, entRect_t, initSize);
+    vecinit(GENERALZONE, pickupList->bitmap, byte, initSize/8);
+}
+
+int ent_addPickup(pickupList_t *pickupList, entVec_t posToSet, entRect_t rectToSet)
+{
+    int id = bm_findEmpty(pickupList->bitmap.arr,
+    vecsize(pickupList->bitmap));
+    if(id < 0)
+    {
+        id = vecsize(pickupList->posList);
+        vecpushempty(pickupList->posList, entVec_t);
+        vecpushempty(pickupList->rectList, entRect_t);
+    }
+
+    entVec_t *pickupPos = &vecget(pickupList->posList, id);
+    entRect_t *pickupRect = &vecget(pickupList->rectList, id);
+
+    vec3set(pickupPos->pos, posToSet.pos);
+    rect2set(pickupRect->rect, rectToSet.rect);
+
+    bm_setBitVal(pickupList->bitmap.arr, id, 1);
+
+    return id;
+}
+
+void ent_removePickup(pickupList_t *pickupList, int pickupID)
+{
+    bm_setBitVal(pickupList->bitmap.arr, pickupID, 0);
+}
+
+
+
+void ent_init()
+{
+    translateIDMap = i2imap_init(GENERALZONE);
+    ent_initEntList();
+    ent_initSpriteList();
+    ent_initRayRenderList();
+    // ent_initRayList();
+    // ent_initMoveList();
+    ent_initVectorRayWeapon();
+    ent_initVectorEntityList();
+    ent_initKillList();
+}

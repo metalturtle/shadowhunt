@@ -10,6 +10,7 @@ extern "C" {
 #include <stdarg.h>
 #include <stdlib.h>
 #include <sys/time.h>
+#include <SDL3/SDL.h>
 #include "cJSON.h"
 
 
@@ -336,6 +337,18 @@ extern void closeLevelFile(void);
 // extern float getScreenWidth(void);
 // extern float getScreenHeight(void);
 
+extern void vec_normalize(SDL_FPoint *point);
+//  b2WorldId worldId;
+extern void sdl_render() ;
+extern void vec_normalize(SDL_FPoint *point);
+extern void vec_multiply(SDL_FPoint *point, float multiplier) ;
+extern void vec_subtract(SDL_FPoint *a, SDL_FPoint *b);
+extern void vec_add(SDL_FPoint *a, SDL_FPoint *b);
+extern float vec_length(SDL_FPoint *a) ;
+extern void vec_copy(SDL_FPoint *a, SDL_FPoint *b);
+extern void vec_copyRectPos(SDL_FPoint *a, SDL_FRect *rect);
+extern float vec_getAngle(SDL_FPoint *a) ;
+extern void vec_getVecFromAngle(SDL_FPoint *a, float angle);
 
 /********************UTIL********************/
 

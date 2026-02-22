@@ -22,33 +22,31 @@ int serv_checkClientRepMap(netaddr_t *clAddr)
 
 /********************ADDING CLIENT********************/
 
-void serv_addSyncedEnt(int entID, int entType)
-{
+// void serv_addSyncedEnt(int entID, int entType)
+// {
 
-    ent_addSyncedEntState(entID, entType);
-
-
-    serv_clrep_t *addRep;
-    for(int i = 0; i < vecsize(server.clRepList); i++)
-    {
-        if(!bm_getBitVal(server.clRepBitMap.arr, i))
-            continue;
+//     // ent_addSyncedEntState(entID, entType);
 
 
-        addRep = &vecget(server.clRepList, i);
-        printf("adding synced entity for the client %d \n", i);
-        ent_addSyncedEntToClient(entID, i, addRep->con, entType);
-    }
-}
+//     serv_clrep_t *addRep;
+//     for(int i = 0; i < vecsize(server.clRepList); i++)
+//     {
+//         if(!bm_getBitVal(server.clRepBitMap.arr, i))
+//             continue;
+
+
+//         addRep = &vecget(server.clRepList, i);
+//         printf("adding synced entity for the client %d \n", i);
+//         ent_addSyncedEntToClient(entID, addRep, entType);
+//     }
+// }
 
 // void serv_setupEntitiesForSerializer(int entID, int entTY
 
 void serv_setupNewClient(serv_clrep_t *newClRep, int conID)
 {
-    serv_clrep_t *addRep;
-    bitstream_t bs;
-
-    ent_handleClientJoin(conID, newClRep->con);
+    ent_initializeClient(newClRep);
+   // ent_handleClientJoin(conID, newClRep);
     intPair_t pair = ent_setupEntityForClient(conID, newClRep->con);
 
     int entID = pair.a;
@@ -56,9 +54,11 @@ void serv_setupNewClient(serv_clrep_t *newClRep, int conID)
     if(entID < 0)
         return;
     
+    NetEntity *netEnt = &netEntityList[entID];
+    netEnt->clientOwner = newClRep->conID;
 
-    printf("adding synced entity %d\n", entID);
-    serv_addSyncedEnt(entID, entType);
+    // printf("adding synced entity %d\n", entID);
+    // serv_addSyncedEnt(entID, entType);
 }
 
 
@@ -77,7 +77,7 @@ void serv_removeSyncedEnt(int entID, int entType)
 
         addRep = &vecget(server.clRepList, i);
         printf("removing synced entity for the client %d \n", i);
-        ent_removeSyncedEntFromClient(entID, i, addRep->con, entType);
+        ent_removeSyncedEntFromClient(entID, addRep, entType);
     }
 }
 
@@ -86,8 +86,6 @@ serv_clrep_t *serv_addClient()
     int fset;
     serv_clrep_t *clRep;
     char addrStr[64];
-    inputCommandList_t *inpCmdList;
-
 
     int freeid = bm_findEmpty(server.clRepBitMap.arr, server.clRepBitMap.size);
     
@@ -95,20 +93,22 @@ serv_clrep_t *serv_addClient()
     {
         vecpush(server.clRepBitMap, byte, 1);
         vecpushempty(server.clRepList, serv_clrep_t);
-        vecpushempty(cl_inputList.list, inputCommandList_t);
+        // vecpushempty(cl_inputList.list, inputCommandList_t);
 
         freeid = server.clRepList.size - 1;
         clRep = &(vecget(server.clRepList, freeid));
-        inpCmdList = &vecget(cl_inputList.list, freeid);
+        // inpCmdList = &vecget(cl_inputList.list, freeid);
     }
     else
     {
         clRep = &(vecget(server.clRepList, freeid));
-        inpCmdList = &vecget(cl_inputList.list, freeid);
+        // inpCmdList = &vecget(cl_inputList.list, freeid);
     }
 
+    inputCommandList_t *inpCmdList = &clRep->inputCommandList;
     clRep->con = nextCon;
     clRep->clState = SYS_IDLE;
+    clRep->conID = freeid;
     bm_setBitVal(server.clRepBitMap.arr, freeid, 1);
     printf("\n\n\nadding client. conid=%d\n", freeid);
     s2imap_put(server.clRepMap, netAddrToString(nextCon->remoteAddress), freeid);
@@ -118,7 +118,8 @@ serv_clrep_t *serv_addClient()
 
     nextCon = (netcon_t *) zidmalloc(GENERALZONE, sizeof(netcon_t));
     netcon_setup(nextCon);
-
+    int wid = neEntSys_initSnapshot();
+    clRep->worldSnapshotID = wid;
 
     serv_setupNewClient(clRep, freeid);
 
@@ -135,7 +136,7 @@ void serv_disconnectClient(int conID)
     intPair_t entIDPair = ent_removeEntityFromClient(conID, clRep->con);
 
 
-    ent_handleClientLeave(conID, clRep->con);
+    ent_handleClientLeave(clRep);
 
 
     zidfree(clRep->con);
@@ -147,7 +148,7 @@ void serv_disconnectClient(int conID)
     s2imap_remove(server.clRepMap, netAddrToString(clRep->con->remoteAddress));
 
 
-    inputCommandList_t *inpCmdList = &vecget(cl_inputList.list, conID);
+    inputCommandList_t *inpCmdList = &clRep->inputCommandList;
     inpCmd_free(inpCmdList);
 
     serv_removeSyncedEnt(entIDPair.a, entIDPair.b);
@@ -165,7 +166,7 @@ void serv_checkTimeout()
         
         if(checkTimer(&clRep->lastRecvTimer))
         {
-            serv_disconnectClient(i);
+            // serv_disconnectClient(i);
             // com_error(ERR_FATAL, "disconnect\n");
         }
     }
@@ -175,12 +176,12 @@ void serv_checkTimeout()
 
 void serv_acknowledge(int conID, serv_clrep_t *clRep, bitstream_t *bs)
 {
-    ent_ackSerializerList(conID, clRep->con, bs);
+    ent_ackSerializerList(clRep, bs);
 }
 
 void serv_ackEntities(int conID, serv_clrep_t *clRep, bitstream_t *bs)
 {    
-    ent_ackSerializerList(conID, clRep->con, bs);
+    ent_ackSerializerList(clRep, bs);
 }
 
 void serv_readSysCmd(serv_clrep_t *clRep, bitstream_t *readStream)
@@ -197,18 +198,20 @@ void serv_readInputCmd(int conID, serv_clrep_t *clRep, bitstream_t *readStream)
     inputCommandList_t *inputCommandList;
 
 
-    inputCommandList = &vecget(cl_inputList.list, conID);
+    inputCommandList = &clRep->inputCommandList;
 
     recordID = stream_readInt(readStream);
     arrLen = stream_readInt(readStream);
-    int lastRecordID = stream_readInt(readStream);
+
+    // printf("read input cmd %d %d\n", conID, arrLen);
+    // int lastRecordID = stream_readInt(readStream);
 
 
-    if(recordID > (inputCommandList->lastRecordID + 1))
-    {
-        printf("recordID: %d, lastRecordID=%d \n", recordID, inputCommandList->lastRecordID);
-        com_error(ERR_FATAL, "Error: missed some input commands from the client\n");
-    }
+    // if(recordID > (inputCommandList->lastRecordID + 1))
+    // {
+    //     printf("recordID: %d, lastRecordID=%d \n", recordID, inputCommandList->lastRecordID);
+    //     com_error(ERR_FATAL, "Error: missed some input commands from the client\n");
+    // }
 
 
     inpCmd_clear(&readCmdList);
@@ -219,8 +222,11 @@ void serv_readInputCmd(int conID, serv_clrep_t *clRep, bitstream_t *readStream)
         stream_copyBitsData(readStream, key, inpCmdConfig.keyBitLen);
         int mouseXInt = stream_readInt(readStream);
         int mouseYInt = stream_readInt(readStream);
+        float deltaTime = stream_readInt( readStream);
+        deltaTime /= (float)(1000 * 1000);
+        // printf("server received delta time %f \n", deltaTime);
 
-        if((recordID + i) <= inputCommandList->lastRecordID)
+        if((recordID + i) < inputCommandList->end)
         {
             continue;
         }
@@ -233,14 +239,15 @@ void serv_readInputCmd(int conID, serv_clrep_t *clRep, bitstream_t *readStream)
 
         inpCmd->mouseX = ((float)mouseXInt)/1000.0;
         inpCmd->mouseY = ((float)mouseYInt)/1000.0;
+        inpCmd->deltaTime = deltaTime;
     }
 
 
-    if(inputCommandList->lastRecordID >= lastRecordID)
-    {
-        printf("returned \n");
-        return;
-    }
+    // if(inputCommandList->lastRecordID >= lastRecordID)
+    // {
+    //     printf("returned \n");
+    //     return;
+    // }
 
 
     inputCommand_t *readInpCmd;
@@ -254,11 +261,13 @@ void serv_readInputCmd(int conID, serv_clrep_t *clRep, bitstream_t *readStream)
 
         inpCmd->mouseX = readInpCmd->mouseX;
         inpCmd->mouseY = readInpCmd->mouseY;
+        inpCmd->deltaTime = readInpCmd->deltaTime;
+        inpCmd->posCheck.x = inpCmd->posCheck.y = 0;
         // printf("input check %p %p %p %d %f,%f\n", inputCommandList, inpCmd, inpCmd_get(inputCommandList, inpCmd_getLen(inputCommandList) - 1), inpCmd_getLen(inputCommandList), inpCmd->mouseX, inpCmd->mouseY);
     }
 
 
-    inputCommandList->lastRecordID = lastRecordID;
+    // inputCommandList->lastRecordID = lastRecordID;
 }
 
 
@@ -317,6 +326,7 @@ int serv_readNewConnection(netcon_t *con, bitstream_t *readStream)
 
     return 0;
 }
+
 
 void serv_packetEvent(netaddr_t *fromAddress, byte *data, int len)
 {
@@ -402,10 +412,11 @@ void serv_writeInputACK(int conID, serv_clrep_t *clRep, bitstream_t *writeStream
         return;        
     }
 
-    inputCommandList = &vecget(cl_inputList.list, conID);
+    inputCommandList = &clRep->inputCommandList;
 
+    printf("writing acked input %d \n", inputCommandList->start - 1);
     stream_writeByte(writeStream, SERVCMD_INPUTACK);
-    stream_writeInt(writeStream, inputCommandList->lastRecordID);
+    stream_writeInt(writeStream, inputCommandList->start - 1);
 }
 
 
@@ -419,7 +430,7 @@ void serv_writeEntities(int conID, serv_clrep_t *clRep, bitstream_t *writeStream
 
     // ent_writeAllSerialize(writeStream, clRep->con, &clRep->entStateRecordList);
 
-    ent_writeSerializerList(conID, clRep->con, writeStream);
+    ent_writeSerializerList(clRep, writeStream);
 }
 
 
@@ -469,16 +480,18 @@ void serv_sendPacketAll()
         serv_writeToClient(i, clRep);
     }
 
-    
-    ent_cleanupSerializerState();
+    resetNetEnt();
 
+    // ent_cleanupSerializerState();
+
+    ent_settleStateDiff();
 
     startTimer(&server.sendTimer, 100);
 }
 
 /********************SERVER RUN COMMAND********************/
 
-void serv_runCmd()
+void serv_clearInputs()
 {
     serv_clrep_t *clRep;
     // inputCommand_t *inpCmd;
@@ -486,7 +499,7 @@ void serv_runCmd()
     float speed = 0.75;
     int inpLen;
 
-    eng_processServerEntities();
+    // eng_processServerEntities();
     // ent_runMove();
     
     // ent_runAllThink();
@@ -496,8 +509,9 @@ void serv_runCmd()
         if(!bm_getBitVal(server.clRepBitMap.arr, i))
             continue;
 
+        clRep = &vecget(server.clRepList, i);
         // clRep = &vecget(server.clRepList, i);
-        inpCmdList = &vecget(cl_inputList.list, i);
+        inpCmdList = &clRep->inputCommandList;
 
 
         // inpCmd_clear(clRep->inputCommandList);
@@ -508,31 +522,51 @@ void serv_runCmd()
 
 /********************INIT SERVER AND FRAME FUNCTION********************/
 
-void serv_init()
-{
+void sv_init() {
     zmemset(&server, 0, sizeof(server));
     
     vecinit(GENERALZONE, server.clRepList, serv_clrep_t, 8);
 
     vecinit(GENERALZONE, server.clRepBitMap, byte, 8);
 
-    vecinit(GENERALZONE, cl_inputList.list, inputCommandList_t, 8);
+    // vecinit(GENERALZONE, cl_inputList.list, inputCommandList_t, 8);
 
     server.clRepMap = s2imap_create(GENERALZONE);
     server.lastConID = 0;
 
     nextCon = (netcon_t *) zidmalloc(GENERALZONE, sizeof(netcon_t));
-    netcon_setup(nextCon);
+}
 
-
+void serv_init()
+{
     inpCmd_init(&readCmdList);
+    sv_init();  // Initialize server state including nextCon
 }
 
 void serv_frame()
 {
-    serv_checkTimeout();
+    netcon_setup(nextCon);
+}
 
-    serv_runCmd();
+
+
+void sv_setup() {
+    netcon_setup(nextCon);
+}
+
+void sv_update() {
+    // printf("serv_frame\n");
+    // serv_checkTimeout();
+
+    // serv_runCmd();
     
     serv_sendPacketAll();
+}
+
+void sv_cleanup() {
+
+}
+
+void sv_close() {
+
 }
