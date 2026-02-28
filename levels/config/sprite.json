@@ -1,0 +1,62 @@
+{
+  "sprite": {
+    "folder": "res/sprites",
+    "pickup_health": "health.png",
+    "pickup_gun": "gun.png",
+    "rect": "red.png",
+    "rect2": "whitetile2.png",
+    "pickup_red_pellet": "red_pellet.png",
+    "blade": "blade.png",
+    "bullet_tracer": "bullet_tracer.png"
+  },
+  "animated_sprite": {
+    "folder": "res/playeranims",
+    "actor_legs": {
+      "file": "sprNickeLegs.png",
+      "row": 4,
+      "col": 4,
+      "speed": 0.06
+    },
+    "actor_torso_walk_machgun": {
+      "file": "sprNickeWalkMachinegun.png",
+      "row": 2,
+      "col": 4
+    },
+    "actor_torso_attack_machgun": {
+      "file": "sprNickeAttackMachinegun.png",
+      "row": 3,
+      "col": 1
+    },
+    "actor_torso_walk_heavy": { "file": "sprNickeWalkHeavy.png" },
+    "actor_torso_attack_heavy": {
+      "file": "sprNickeAttackHeavy.png",
+      "row": 4,
+      "col": 2
+    },
+    "actor_dead": { "file": "sprNickeDeadCut.png", "col": 3, "row": 1 },
+    "actor_stealth_standing": { "file": "default2.png", "col": 1, "row": 1 },
+    "stealth_dead": { "file": "stealth_dead.png", "col": 1, "row": 1 }
+  },
+  "animated_sprite_set": {
+    "actor": {
+      "count": 2,
+      "default": {
+        "actor_legs": { "bound": [-4, -4, 8, 8] },
+        "actor_torso_walk_machgun": { "bound": [-4, -4, 8, 8] }
+      },
+      "dead": {
+        "actor_dead": { "bound": [-6, -6, 12, 12] }
+      }
+    },
+    "stealth_actor": {
+      "count": 2,
+      "default": {
+        "actor_legs": { "bound": [-4, -4, 8, 8] },
+        "actor_stealth_standing": { "bound": [-4, -4, 8, 8] }
+      },
+      "dead": {
+        "actor_dead": { "bound": [-6, -6, 12, 12] }
+      }
+    }
+  }
+}

@@ -231,6 +231,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         isServer = 1;
     }
 
+    printf("isServer: %d %d\n", isServer, cvar_getInt("isServer"));
+
     initEngineParameters(isServer);
 
     int success;

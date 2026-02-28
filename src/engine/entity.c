@@ -12,7 +12,6 @@ entityList_t entList;
 VectorEntity vectorEntityList[VECTOR_ENTITY_COUNT];
 NetEntity netEntityList[VECTOR_ENTITY_COUNT];
 
-i2imap_t *mainEntMap;
 
 // entitySerializerList_t entSerializerList;
 

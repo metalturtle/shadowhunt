@@ -125,7 +125,8 @@ enum ESDefState {
     ESDEF_WRITETOENT,
     ESDEF_BSWRITESTATE,
     ESDEF_BSREADSTATE,
-    ESDEF_BSTRACKSTATE
+    ESDEF_BSTRACKSTATE,
+    ESDEF_BSRESETSTATE
 };
 
 typedef struct ESDiff_st {
@@ -778,4 +779,6 @@ extern void serv_sendPacketAll();
 extern void entSys_updateClient();
 
 extern int neEntSys_initSnapshot();
+
+extern void netEntSys_init();
 #endif

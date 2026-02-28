@@ -78,6 +78,7 @@ void handleESVar(ESDef *esDef, void *ptr) {
         getESVQLast(esvq, ptr);
     }
     if(esDef->curState == ESDEF_BSWRITESTATE) {
+        printf("writing state %d %d\n", esDef->curDef, esDef->curState);
         ESDiff *esDiff = esDef->esDiff;
         ESVarQueue *esQueue = &esDef->stateList[esDef->curDef];
         if(esDiff->shouldSend[esDef->curDef]) {
@@ -99,6 +100,18 @@ void handleESVar(ESDef *esDef, void *ptr) {
                 ((byte *)ptr)[i] = stream_readByte(esDef->bs);
             }
         }
+    }
+    if(esDef->curState == ESDEF_BSTRACKSTATE) {
+        ESDiff *esDiff = esDef->esDiff;
+        byte *lastElem = (byte *)esvq->varList + (esvq->end - 1) * esvq->elemSize;
+        int diff = memcmp(ptr, lastElem, esvq->elemSize);
+        if(diff != 0) {
+            esDiff->shouldSend[esDef->curDef] = true;
+        }
+    }
+    if(esDef->curState == ESDEF_BSRESETSTATE) {
+        ESDiff *esDiff = esDef->esDiff;
+        esDiff->shouldSend[esDef->curDef] = false;
     }
 
     esDef->curDef++;

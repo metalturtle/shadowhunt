@@ -274,7 +274,7 @@ void input_func_common(inputCommand_t *inpCmd, VectorEntity *vecEnt, int server)
         
     moveEntityWithCollision(vecEnt, inpCmd->deltaTime);
 
-    // printf("vector position %f %f \n", vecEnt->pos.x, vecEnt->pos.y);
+    printf("vector position %f %f \n", vecEnt->pos.x, vecEnt->pos.y);
 
     vecEnt->animSprite.pos[0] = vecEnt->pos.x + vecEnt->rect.x;vecEnt->animSprite.pos[1] = vecEnt->pos.y + vecEnt->rect.y;
 
@@ -422,7 +422,7 @@ void serializePlayer(VectorEntity *ent, NetObj *netObj) {
 }
 
 void entSys_init() {
-
+    netEntSys_init();
 }
 
 void initPlayerState(ESDef *esDef) {

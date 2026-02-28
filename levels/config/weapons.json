@@ -1,0 +1,24 @@
+{
+	"shader":{
+		"folder":"shaders",
+		"vertex_shader":"pass.vert",
+		"shadow_map":"shadowmap1D.glsl",
+		"shadow_render":"shadowRender.frag",
+		"bump_map":"bumplight.glsl",
+		"apply_light":"fragment.glsl",
+		"sprite_light":"sprite.glsl",
+		"test":"test.glsl",
+	},
+	"texture":{
+		"folder":"levels",
+		"wall":"concrete2.png",
+		"concrete_blue":"blueconcrete.jpg",
+		"concrete_blue_normals":"bluerepeat.jpg",
+		"white_tile" : "concrete.jpg",
+		"spark": "bultrail.png",
+	},
+	"animation":{
+		"folder":"levels//playeranims",
+		"anim_file":"player.txt"
+	}
+}

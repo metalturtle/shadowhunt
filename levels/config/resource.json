@@ -1,0 +1,35 @@
+{
+	"shader": {
+		"bump_map": "bumplight.glsl",
+		"shadow_map": "shadowmap1D.glsl",
+		"sprite_light": "sprite.glsl",
+		"folder": "shaders",
+		"test": "test.glsl",
+		"shadow_render": "shadowRender.frag",
+		"vertex_shader": "pass.vert",
+		"water_render": "water_render.glsl",
+		"water_sim": "water_sim.glsl",
+		"apply_light": "fragment.glsl"
+	},
+	"menu":{
+		"folder":"levels/GUI",
+		"button_atlas":"button.txt",
+		"background_texture": "start_menu_background.png",
+	},
+	"basic_texture": {
+		"red": "red.png",
+		"edge": "edge.png",
+		"folder": "levels",
+		"white": "white.png",
+		"spark": "spark.png",
+		"black": "black.png",
+		"dust": "dust2.png",
+	},
+	"texture": {
+		"folder": "levels",
+	},
+	"animation": {
+		"anim_file": "player.txt",
+		"folder": "levels//playeranims"
+	}
+}

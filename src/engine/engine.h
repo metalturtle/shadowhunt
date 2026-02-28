@@ -384,4 +384,5 @@ extern void cl_addInputCmd();
 extern void cl_update();
 
 extern void eng_setup();
+extern void  cl_setup();
 #endif

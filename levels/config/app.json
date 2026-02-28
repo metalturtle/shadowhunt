@@ -1,0 +1,12 @@
+{
+	"render": {
+		"screen_width":1200,
+		"screen_height":515,
+		"ambient_light":0.1,
+	}
+	"network": {
+		"network_rate":20,
+		"max_network_send":40,
+		"history_buffer_size":3,
+	}
+}

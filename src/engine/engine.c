@@ -20,6 +20,7 @@ pickupList_t weaponPickupList;
 endTimer_t pickupSpawnTimer;
 PlayerData playerDataList[8];
 // Puppet puppetList[8];
+i2imap_t *mainEntMap;
 
 
 #define VECENT_SPEED 1
@@ -383,11 +384,19 @@ void eng_init() {
 
     // initWeaponPickupList();
 
+    mainEntMap = i2imap_init(GENERALZONE);
+
     startTimer(&pickupSpawnTimer, 5000);
 }
 
 void eng_setup() {
-    sv_setup();
+    
+    int isServer = cvar_getInt("isServer");
+    if(isServer) {
+        sv_setup();
+    } else {
+        cl_setup();
+    }
     entSys_setup();
 
     world_setup();
