@@ -43,3 +43,4 @@ compile_commands.json
 # Zip archives (unless you need them)
 *.zip
 .cache
+res
