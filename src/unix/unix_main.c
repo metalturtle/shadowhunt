@@ -152,6 +152,27 @@ sysEvent_t *getSysEvent()
 
 void scanSysEvents()
 {
+    /* Opt-in deterministic input for the local multiplayer smoke harness. */
+    static bool testKeyReported;
+    const char *testKey = getenv("SHADOWHUNT_TEST_KEYS");
+    if(!isServer && testKey != NULL && testKey[0] != '\0') {
+        for(const char *key = testKey; *key != '\0'; key++) {
+            if(strchr("wsadt", *key) != NULL)
+                engineParameters.KEYPRESSED[(unsigned char)*key] = true;
+        }
+        if(!testKeyReported) {
+            printf("test input active: %s\n", testKey);
+            testKeyReported = true;
+        }
+    }
+
+    const char *testMouse = getenv("SHADOWHUNT_TEST_MOUSE");
+    if(!isServer && testMouse != NULL) {
+        float x, y;
+        if(sscanf(testMouse, "%f,%f", &x, &y) == 2)
+            addSysEvent(SYSEVENT_MOUSE, (int)(x * 10000), (int)(y * 10000), NULL);
+    }
+
     netaddr_t fromAddr;
     bitstream_t recvbs;
     int ret = 0;
@@ -170,14 +191,17 @@ void scanSysEvents()
         }
     }
 
-    stream_init(&recvbs, recvBuffer, MAX_MSGLEN);
-    if((ret = net_getPacket(&fromAddr, &recvbs)) > 0)
+    /* Drain every queued datagram (bounded) so a full server keeps up with
+     * eight clients sending at 20 Hz each. */
+    for(int packets = 0; packets < 96; packets++)
     {
+        stream_init(&recvbs, recvBuffer, MAX_MSGLEN);
+        if((ret = net_getPacket(&fromAddr, &recvbs)) <= 0)
+            break;
 
         len = sizeof(netaddr_t) + ret;
         buf = (byte *) zidmalloc(TEMPORARYZONE, len);
 
-        // printf("checking buf=%p len=%d\n", buf, len);
         zmemcpy(buf, &fromAddr, sizeof(netaddr_t));
         zmemcpy(buf + sizeof(netaddr_t), recvBuffer, ret);
         addSysEvent(SYSEVENT_PACKET, len, 0, buf);
@@ -190,8 +214,8 @@ void initEngineParameters(bool isServer) {
     cameraRect.y = 0;
     cameraRect.w = 100;
     cameraRect.h = engineParameters.aspectRatio * cameraRect.w;
-    engineParameters.windowWidth = 800;
-    engineParameters.windowHeight = engineParameters.aspectRatio * engineParameters.windowWidth;
+    engineParameters.windowWidth = 1280;
+    engineParameters.windowHeight = 800;
     engineParameters.screenFPS = isServer? 60 : 60;
     engineParameters.tickRate = 1.0/engineParameters.screenFPS;
     engineParameters.gameDeltaTime = 0;
@@ -212,19 +236,24 @@ void initEngineParameters(bool isServer) {
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 {
+    if(getenv("SHADOWHUNT_TEST_LOGS") != NULL)
+        setvbuf(stdout, NULL, _IOLBF, 0);
+
     // SCREEN_WIDTH = 600;
     // SCREEN_HEIGHT = 600;
     createThreeZones(1024*1024, 1024*1024*20, 1024*1024);
 
     cvar_init();
 
-    int port;
+    int port = 8000;
 
     if(argc > 1)
     {
         cv_isServer = cvar_get("isServer", "0");
         isServer = 0;
         port = atoi(argv[1]);
+        cvar_get("serverHost", argc > 2 ? argv[2] : "127.0.0.1");
+        cvar_get("serverPort", argc > 3 ? argv[3] : "8000");
     } else 
     {
         cv_isServer = cvar_get("isServer", "1");
@@ -276,7 +305,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
     /* Create the window */
-    if (!SDL_CreateWindowAndRenderer(cv_isServer->intval ? "Server" : "Client", engineParameters.windowWidth, engineParameters.windowHeight, 0, &engineParameters.window, &engineParameters.renderer)) {
+    if (!SDL_CreateWindowAndRenderer(cv_isServer->intval ? "Shadowhunt Server" : "Shadowhunt", engineParameters.windowWidth, engineParameters.windowHeight, cv_isServer->intval ? 0 : SDL_WINDOW_RESIZABLE, &engineParameters.window, &engineParameters.renderer)) {
         SDL_Log("Couldn't create window and renderer: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
@@ -308,12 +337,29 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
         break;
         case SDL_EVENT_KEY_DOWN:
         // printf("adding sys event %d \n", event->key.key);
-        engineParameters.KEYPRESSED[event->key.key] = true;
+        {
+            int key = event->key.key;
+            // SDL keycodes use ASCII values for letters, but may be uppercase
+            // when Shift is held. Gameplay bindings use lowercase characters.
+            if (key >= 'A' && key <= 'Z')
+                key += 'a' - 'A';
+            if (key >= 0 && key < (int)(sizeof(engineParameters.KEYPRESSED) /
+                                        sizeof(engineParameters.KEYPRESSED[0])))
+                engineParameters.KEYPRESSED[key] = true;
+        }
 
         break;
         case SDL_EVENT_KEY_UP:
-        engineParameters.KEYPRESSED[event->key.key] = false;
-        addSysEvent(SYSEVENT_KEY, event->key.key, qfalse, NULL);
+        {
+            int key = event->key.key;
+            if (key >= 'A' && key <= 'Z')
+                key += 'a' - 'A';
+            if (key >= 0 && key < (int)(sizeof(engineParameters.KEYPRESSED) /
+                                        sizeof(engineParameters.KEYPRESSED[0]))) {
+                engineParameters.KEYPRESSED[key] = false;
+                addSysEvent(SYSEVENT_KEY, key, qfalse, NULL);
+            }
+        }
         break;
         case SDL_EVENT_MOUSE_MOTION:
         mouseScreenPos.x = event->motion.x;
@@ -332,6 +378,25 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
         addSysEvent(SYSEVENT_MOUSE, i_xpos, i_ypos, NULL);
 
         break;
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            if(event->button.button == SDL_BUTTON_LEFT)
+                engineParameters.KEYPRESSED['t'] = true;
+            break;
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+            if(event->button.button == SDL_BUTTON_LEFT) {
+                engineParameters.KEYPRESSED['t'] = false;
+                addSysEvent(SYSEVENT_KEY, 't', qfalse, NULL);
+            }
+            break;
+        case SDL_EVENT_WINDOW_RESIZED:
+            if(event->window.data1 > 0 && event->window.data2 > 0) {
+                engineParameters.windowWidth = event->window.data1;
+                engineParameters.windowHeight = event->window.data2;
+            }
+            break;
+        case SDL_EVENT_WINDOW_FOCUS_LOST:
+            memset(engineParameters.KEYPRESSED, 0, sizeof(engineParameters.KEYPRESSED));
+            break;
     }
     
     return SDL_APP_CONTINUE;

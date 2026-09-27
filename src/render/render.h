@@ -64,7 +64,6 @@ typedef struct spriteHandle_st
 typedef struct animatedSpriteImage_st
 {
     SDL_Texture **texImage;
-    unsigned int texName;
     int row;
     int col;
     float total;

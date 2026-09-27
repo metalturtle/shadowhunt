@@ -367,6 +367,9 @@ typedef struct rayHandleList_st
     rayHitList_t rayHitList;
 } rayHandleList_t;
 
+extern void handle_ray_list(rayHandleList_t *rayHandleList);
+extern void handle_ray_hits(void);
+
 
 extern void ent_initRayHandleList(rayHandleList_t *rayHandleList);
 extern int ent_addRayEntity(rayHandleList_t *rayHandleList, int entID);
@@ -413,18 +416,22 @@ extern void ent_removeRayWeapon(rayWeaponHandle_t *weaponHandle, weaponOnHand_t 
 
 /********************ENTITY INDEX********************/
 
+#define INTERP_SAMPLES 8
+
+/* Ring of received snapshot samples used to render remote players slightly
+ * in the past, so movement stays smooth between 20 Hz snapshots. */
 typedef struct positionInterpolate_st
 {
-    float pos[3][2];
-    long timestamp[3];
+    float pos[INTERP_SAMPLES][2];
+    long timestamp[INTERP_SAMPLES];
     int last;
     int first;
 } positionInterpolate_t;
 
 typedef struct angleInterpolate_st
 {
-    float angle[3];
-    long timestamp[3];
+    float angle[INTERP_SAMPLES];
+    long timestamp[INTERP_SAMPLES];
     int last;
     int first;
 } angleInterpolate_t;
@@ -724,6 +731,24 @@ typedef struct Player_st {
     endTimer_t shootTimer;
     weaponOnHand_t weaponOnHand;
     bool active;
+
+    /* Stealth state. The server owns it; clients mirror it from snapshots. */
+    int role;
+    bool exposed;
+    bool spectating;
+    unsigned long powerUntil;
+    unsigned long frozenUntil;
+    float moveBudget;
+    int tags;
+    int kills;
+
+    /* Client-only presentation state. */
+    bool hiddenFromViewer;
+    float lastHealth;
+    unsigned long hitFlashUntil;
+    float walkCycle;
+    float moveAngle;
+    bool moving;
 } PlayerData;
 
 extern PlayerData playerDataList[8];

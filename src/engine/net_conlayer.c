@@ -8,6 +8,13 @@ endTimer_t sendTimer;
 
 int duration = 200;
 
+static int netcon_reject(const char *reason)
+{
+    if(getenv("SHADOWHUNT_TEST_LOGS") != NULL)
+        printf("dropping invalid packet: %s\n", reason);
+    return -1;
+}
+
 void netcon_init()
 {
     bstream.buf = zidmalloc(GENERALZONE, MAX_MSGLEN);
@@ -160,6 +167,8 @@ int netcon_processFragment(netcon_t *con, bitstream_t *bs, int incomingSequence)
     }
 
     // check if no fragment packet is skipped
+    if(!stream_canRead(bs, 8))
+        return -1;
     int fragID = stream_readByte(bs);
 
     if(fragID != con->recvFragID + 1)
@@ -188,8 +197,8 @@ int netcon_processFragment(netcon_t *con, bitstream_t *bs, int incomingSequence)
     // check if the full packet length has arrived
     if(con->recvFullFragLength == con->recvFragLength)
     {
-        stream_init(bs, bs->buf, bs->bufsize);
-        zmemcpy(bs->buf, con->recvFragBuffer, con->recvFullFragLength);
+        stream_init(bs, con->recvFragBuffer, con->recvFullFragLength);
+        bs->datalen = con->recvFullFragLength;
 
         con->recvState = NETCON_READY;
     }
@@ -204,51 +213,63 @@ int netcon_process(netcon_t *con, bitstream_t *bs)
     int headcurb;
     int ackSeq;
 
+    if(con == NULL || bs == NULL || !stream_canRead(bs, 40))
+        return netcon_reject("short connection header");
+
     incomingSequence = stream_readInt(bs);
     isFragmented = stream_readByte(bs);
-
 
     // check if packet is fragmented
     if(isFragmented)
     {
-        retval = netcon_processFragment(con, bs, incomingSequence);
+        if(isFragmented != 1)
+            return netcon_reject("invalid fragment flag");
+        return netcon_processFragment(con, bs, incomingSequence);
     } else {
-        if(con->recvState == NETCON_FRAGMENT)
-        {
+        if(con->recvState == NETCON_FRAGMENT) {
             con->recvState = NETCON_READY;
             con->recvFragLength = 0;
             con->recvFullFragLength = 0;
         }
-        else {
-            con->incomingSequence = incomingSequence;
 
-            fullPayloadLen = stream_readInt(bs);
-            ackSeq = stream_readInt(bs);
+        if(!stream_canRead(bs, 64))
+            return netcon_reject("short payload header");
+        con->incomingSequence = incomingSequence;
 
+        fullPayloadLen = stream_readInt(bs);
+        ackSeq = stream_readInt(bs);
 
-            con->lastAckSequence = ackSeq;
+        if(fullPayloadLen <= 0 || fullPayloadLen > MAX_MSGLEN)
+            return netcon_reject("invalid declared payload length");
 
-            headcurb = bs->curbyte;
-            payloadLen = bs->datalen - headcurb;
+        con->lastAckSequence = ackSeq;
 
-            if(fullPayloadLen > payloadLen)
-            {
-                con->recvState = NETCON_FRAGMENT;
+        headcurb = bs->curbyte;
+        payloadLen = bs->datalen - headcurb;
 
-                con->recvFullFragLength = fullPayloadLen;
-                con->recvFragLength = payloadLen;
-                con->recvFragSequence = incomingSequence;
-                con->recvFragID = 0;
+        if(payloadLen < 0 || fullPayloadLen < payloadLen) {
+            return netcon_reject("payload longer than declared");
+        }
 
-                zmemcpy(con->recvFragBuffer, bs->buf + headcurb, payloadLen); 
-            }
+        if(fullPayloadLen > payloadLen)
+        {
+            con->recvState = NETCON_FRAGMENT;
+
+            con->recvFullFragLength = fullPayloadLen;
+            con->recvFragLength = payloadLen;
+            con->recvFragSequence = incomingSequence;
+            con->recvFragID = 0;
+
+            zmemcpy(con->recvFragBuffer, bs->buf + headcurb, payloadLen);
         }
     }
 
-    if(ackSeq < con->windowStartSequence)
+    if(stream_overflowed(bs))
+        return netcon_reject("bitstream overflow");
+
+    if(ackSeq < con->windowStartSequence || ackSeq >= con->outgoingSequence)
     {
-        printf("ack is too old \n");
-        return -1;
+        return netcon_reject("acknowledgement outside send window");
     }
 
     // printf("acked seq %d \n", ackSeq);

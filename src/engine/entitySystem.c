@@ -3,98 +3,9 @@
 #include "engine.h"
 #include "entity.h"
 #include "../movement/movement.h"
+#include "stealth.h"
 
 #define VECENT_SPEED 1
-
-void interpolate_pos(VectorEntity *vecEnt)
-{
-    unsigned long simTime = getTimeMillis();
-    simTime -= 200;
-
-    // Puppet *puppet = &puppetList[vecEnt->externalID];
-
-
-
-        positionInterpolate_t *posIntp = &vecEnt->posInterpolate;
-        animatedSprite_t *sprite = &vecEnt->animSprite;
-
-
-
-        if(posIntp->last < 3) {
-            return;
-        }
-            
-        
-
-        int lastPos = -1;
-        int nextPos = -1;
-        for(int j = 0; j < 3; j++)
-        {
-            long curTime = posIntp->timestamp[(posIntp->last + j) % 3];
-            if(curTime > simTime)
-            {
-                if(j > 0) {
-                    lastPos = (posIntp->last + j + 3 - 1) % 3;
-                    nextPos = (posIntp->last + j) % 3;
-                }
-
-                break;
-            }
-        }
-
-
-        if(lastPos == -1)
-            return;
-
-
-        if(posIntp->timestamp[nextPos] == posIntp->timestamp[lastPos])
-        {
-            printf("zero difference betwen timestamp %d %d %lu\n", lastPos, nextPos, posIntp->timestamp[nextPos]);
-            return;
-        }
-
-        
-        float prevX = posIntp->pos[lastPos][0];
-        float prevY = posIntp->pos[lastPos][1];
-        float nextX = posIntp->pos[nextPos][0];
-        float nextY = posIntp->pos[nextPos][1];
-
-        float a = ((float)(posIntp->timestamp[nextPos] - simTime))
-            /func_absFloat((float)(posIntp->timestamp[nextPos] - posIntp->timestamp[lastPos]));
-
-
-        float intpVec[3];
-        intpVec[0] = (prevX * a) + (nextX * (1 - a));
-        intpVec[1] = (prevY * a) + (nextY * (1 - a));
-
-        // float correctVec[3];
-        // float temp;
-
-        // float dist = vec2dist(moveEnt->pos, intpVec);
-        // if(dist > 2)
-        // if(1)
-        // {
-        //     printf("dist great %f x: %f-%f, y: %f-%f\n", dist);
-        //     vec3sub(correctVec, intpVec, moveEnt->pos);
-        //     vec3unitvec(correctVec, temp);
-
-        //     temp = dist * 0.1667;
-
-        //     vec3mult(correctVec, temp);
-        //     vec3add(correctVec, correctVec, moveEnt->pos);
-            
-        //     moveEnt->pos[0] = correctVec[0];
-        //     moveEnt->pos[1] = correctVec[1];
-        // }
-        // else {
-        //     moveEnt->pos[0] = intpVec[0];
-        //     moveEnt->pos[1] = intpVec[1];
-        // }
-
-
-        vecEnt->pos.x = intpVec[0];
-        vecEnt->pos.y = intpVec[1];
-}
 
 void set_sprite_angle(VectorEntity *vecEnt, inputCommandList_t *inpCmdList)
 {
@@ -220,20 +131,14 @@ void set_camera1(VectorEntity *vecEnt)
 
 void input_func_common(inputCommand_t *inpCmd, VectorEntity *vecEnt, int server)
 {
-    if(vecEnt->health < 0) {
-        vecEnt->active = false;
+    PlayerData *playerData = stealth_player(vecEnt);
+    if(playerData == NULL || vecEnt->health <= 0 || playerData->spectating)
         return;
-    }
 
-    int inpLen;
-    byte up = false, down = false, left = false, right = false, shoot = false;
+    byte up, down, left, right, shoot;
     float vec3[3];
     float temp;
-    // float speed = 1;
     float mouseXY[3];
-    float angle;
-    float dir[3];
-
 
     vecEnt->dir.x = 0;
     vecEnt->dir.y = 0;
@@ -244,133 +149,108 @@ void input_func_common(inputCommand_t *inpCmd, VectorEntity *vecEnt, int server)
     right = bm_getBitVal(inpCmd->key, 3);
     shoot = bm_getBitVal(inpCmd->key, 4);
 
+    float speed = stealth_moveSpeed(vecEnt);
+    if(speed <= 0)
+        return;
 
-        // vec3add(moveEnt->dir, moveEnt->dir, vec3);
+    /* The client encodes its world-space aim as a point on a circle around
+     * the viewport center, so the angle is independent of the camera. */
+    mouseXY[0] = inpCmd->mouseX - 0.5f;
+    mouseXY[1] = inpCmd->mouseY - 0.5f;
+    mouseXY[2] = 0.0f;
+    if(mouseXY[0] != 0.0f || mouseXY[1] != 0.0f)
+        vecEnt->animSprite.angle = vec3getang2(mouseXY);
+
     if(up || down || left || right) {
-        vec3xyz(vec3,
-            right - left
-            ,up - down
-            ,0);
-    
-        float speed = VECENT_SPEED * 20;
-        
+        vec3xyz(vec3, right - left, down - up, 0);
         vec3unitvec(vec3, temp);
         vec3mult(vec3, speed);
-
         vecEnt->dir.x = vec3[0];
         vecEnt->dir.y = vec3[1];
     }
 
-    if(server) {
-        // ent_setStateFlags(VECTOR_SERIALIZER, vecEnt->entID, 0, true);
-        // ent_setStateFlags(VECTOR_SERIALIZER, vecEnt->entID, 1, true);
-    }
+    float pos[2] = {vecEnt->pos.x, vecEnt->pos.y};
+    float deltaTime = inpCmd->deltaTime;
+    if(server)
+        stealth_consumeMoveBudget(vecEnt, inpCmd, &deltaTime);
 
+    moveEntityWithCollision(vecEnt, deltaTime);
+    playerData->moving = vecEnt->dir.x != 0 || vecEnt->dir.y != 0;
 
-    float pos[2];
-    pos[0] = vecEnt->pos.x;
-    pos[1] = vecEnt->pos.y;
+    if(server && shTestLogs)
+        printf("vector position %f %f \n", vecEnt->pos.x, vecEnt->pos.y);
 
-        
-    moveEntityWithCollision(vecEnt, inpCmd->deltaTime);
+    vecEnt->animSprite.pos[0] = vecEnt->pos.x;
+    vecEnt->animSprite.pos[1] = vecEnt->pos.y;
 
-    printf("vector position %f %f \n", vecEnt->pos.x, vecEnt->pos.y);
-
-    vecEnt->animSprite.pos[0] = vecEnt->pos.x + vecEnt->rect.x;vecEnt->animSprite.pos[1] = vecEnt->pos.y + vecEnt->rect.y;
-
-
-
-        // printf("OUTPUT %d: pos=(%.10f,%.10f) vel=(%.10f,%.10f)\n",
-        //     inpCmd->recordID,
-        //     finalPos.x, finalPos.y,
-        //     finalVel.x, finalVel.y);
-
-        // printf("checking result %f %f %d %d %f %f,%f\n", vecEnt->pos.x, vecEnt->pos.y, inpCmd->recordID, left, inpCmd->deltaTime, , vecEnt->dir.x, vecEnt->dir.y);
-    if(inpCmd->posCheck.x != 0 || inpCmd->posCheck.y != 0) {
-        SDL_FPoint posCheck = inpCmd->posCheck;
-        vec_subtract(&posCheck, &vecEnt->pos);
-        float dist = vec_length(&posCheck);
-        if(dist > 0.001) {
-            printf("MISMATCH %d: expected=(%.10f,%.10f) got=(%.10f,%.10f) diff=%.10f\n",
-                inpCmd->recordID,
-                inpCmd->posCheck.x, inpCmd->posCheck.y,
-                vecEnt->pos.x, vecEnt->pos.y,
-                dist);
-                // printf("Difference in result %f %f %d %f,%f %f %f,%f\n", posCheck.x, posCheck.y, inpCmd->recordID, inpCmd->posCheck.x, inpCmd->posCheck.y, inpCmd->deltaTime);
-                // com_error(ERR_FATAL, "difference");
-        }
-    }
-    inpCmd->posCheck = vecEnt->pos;
-
-    PlayerData *playerData = &playerDataList[vecEnt->externalID];
-    if(shoot)
-    {
-        int entID = vecEnt->entID;
-        printf("called shoot \n");
-        endTimer_t *shootTimer = &playerData->shootTimer;
-
-        SDL_FPoint mouseScreenPos;
-        mouseScreenPos.x = inpCmd->mouseX - 0.5;
-        mouseScreenPos.y = inpCmd->mouseY - 0.5;
-
-        float toAngle = rad2deg(vec_getAngle(&mouseScreenPos));
-
-        weaponOnHand_t *weaponOnHand = &playerData->weaponOnHand;
-        ent_handleRayWeaponShoot(&rayWeaponHandle, entID, weaponOnHand, pos, toAngle);
-
-        // if(server)
-        // {
-        //     ent_setStateFlags(VECTOR_SERIALIZER, entID, 5, 1);
-        // }
+    if(server && shoot && stealth_canShoot(vecEnt)) {
+        float toAngle = rad2deg(vecEnt->animSprite.angle);
+        ent_handleRayWeaponShoot(&rayWeaponHandle, vecEnt->entID,
+                                 &playerData->weaponOnHand, pos, toAngle);
     }
 }
 
 void setupPlayer(VectorEntity *vecEnt, SaveDataHandler* saveHandle) {
-    vecEnt->pos.x = 300;
-    vecEnt->pos.y = 330;
+    bool isServer = cvar_getInt("isServer") != 0;
+
     vecEnt->rect.x = -5;
     vecEnt->rect.y = -5;
     vecEnt->rect.w = 10;
     vecEnt->rect.h = 10;
-    vecEnt->animSprite.rect[0] = vecEnt->animSprite.rect[1] = 0;
-    vecEnt->animSprite.rect[2] = 10; vecEnt->animSprite.rect[3] = 10;
+    vecEnt->animSprite.rect[0] = -9;
+    vecEnt->animSprite.rect[1] = -6.5f;
+    vecEnt->animSprite.rect[2] = 18;
+    vecEnt->animSprite.rect[3] = 13;
+    vecEnt->animSprite.entID = vecEnt->entID;
+    vecEnt->animSprite.texID = isServer ? 0 :
+        sprite_getID("actor_torso_walk_machgun", SPRITE_TYPE_ANIM);
+    vecEnt->animSprite.curSprite = 0;
+    vecEnt->animSprite.angle = 0;
     vecEnt->dir.x = 0;
     vecEnt->dir.y = 0;
     vecEnt->health = 100;
+    vecEnt->pos.x = vecEnt->pos.y = 0;
 
     PlayerData *playerData = NULL;
+    int playerID = -1;
     for(int i = 0; i < 8; i++) {
-        playerData = &playerDataList[i];
-        if(!playerData->active) {
-            vecEnt->externalID = i;
-            playerData->active = true;
+        if(!playerDataList[i].active) {
+            playerID = i;
+            playerData = &playerDataList[i];
             break;
         }
     }
 
-    playerData->weaponShot = 0;
+    if(playerID < 0)
+        com_error(ERR_FATAL, "No free player slots\n");
+
+    zmemset(playerData, 0, sizeof(PlayerData));
+    playerData->active = true;
     playerData->rayEntID = -1;
+    playerData->lastHealth = 100;
+    vecEnt->externalID = playerID;
 
     startTimer(&playerData->shootTimer, 200);
-    zmemset(&playerData->weaponOnHand, 0, sizeof(weaponOnHand_t));
-
     ent_setRayWeapon(&rayWeaponHandle, &playerData->weaponOnHand, vecEnt->entID);
+
+    if(isServer)
+        stealth_onPlayerJoined(vecEnt);
 }
 
 void updatePlayer(VectorEntity *vecEnt, bool isServer, inputCommand_t *inpCmd) {
     input_func_common(inpCmd, vecEnt, isServer);
-    if(!isServer)
-        setCamera(vecEnt);
 }
 
 
 void cleanupPlayer(VectorEntity *vecEnt) {
-    PlayerData *playerData = &playerDataList[vecEnt->entID];
+    PlayerData *playerData = stealth_player(vecEnt);
+    if(playerData == NULL)
+        return;
+    ent_removeRayWeapon(&rayWeaponHandle, &playerData->weaponOnHand);
     playerData->active = false;
     playerData->rayEntID = -1;
     playerData->weaponShot = 0;
-    // stopTimer(&playerData->shootTimer);
-    ent_removeRayWeapon(&rayWeaponHandle, &playerData->weaponOnHand);
+    playerData->role = SH_ROLE_NONE;
 }
 
 void serializePlayer(VectorEntity *ent, NetObj *netObj) {
@@ -444,112 +324,83 @@ void entSys_setup() {
 }
 
 void entSys_updateServer() {
-    for(int j = 0; j < 8; j++) {
+    for(int j = 0; j < VECTOR_ENTITY_COUNT; j++) {
         VectorEntity *vecEnt = &vectorEntityList[j];
         if(!vecEnt->active) continue;
         NetEntity *netEnt = &netEntityList[vecEnt->entID];
+        if(netEnt->clientOwner < 0 || netEnt->clientOwner >= server.clRepList.size ||
+           !bm_getBitVal(server.clRepBitMap.arr, netEnt->clientOwner))
+            continue;
         serv_clrep_t *clRep = &vecget(server.clRepList, netEnt->clientOwner);
-        // printf("client owner %d \n", netEnt->clientOwner);
         inputCommandList_t *inpCmdList = &clRep->inputCommandList;
-        inputCommand_t *inpCmd;
         int inpLen = inpCmd_getLen(inpCmdList);
-        for(int i = 0; i < inpLen;i++) {
-            inpCmd = inpCmd_get(inpCmdList, i);
+        for(int i = 0; i < inpLen; i++) {
+            inputCommand_t *inpCmd = inpCmd_get(inpCmdList, i);
             if(inpCmd->isDone) continue;
-            printf("updated input command %d \n", inpCmd->recordID);
             spriteFactoryList[vecEnt->typeID].think(vecEnt, true, inpCmd);
-
-            // bool up, down, left, right, shoot;
-            // up = bm_getBitVal(inpCmd->key, 0);
-            // down = bm_getBitVal(inpCmd->key, 1);
-            // left = bm_getBitVal(inpCmd->key, 2);
-            // right = bm_getBitVal(inpCmd->key, 3);
-            // shoot = bm_getBitVal(inpCmd->key, 4);
-            // printf("up down left right %d %d %d %d \n", up, down, left , right);;
-        }
-    }
-
-    for(int i = 0; i < VECTOR_ENTITY_COUNT; i++) {
-        VectorEntity *vecEnt = &vectorEntityList[i];
-        if(!vecEnt->active) continue;
-
-        NetEntity *netEnt = &netEntityList[i];
-
-        inputCommandList_t *inpCmdList = &client.clRep.inputCommandList;
-
-        inputCommand_t *inpCmd;
-        int inpLen = inpCmd_getLen(inpCmdList);
-        for(int i = 0; i < inpLen;i++)
-        {
-            inpCmd = inpCmd_get(inpCmdList, i);
-            if(inpCmd->isDone) continue;
             inpCmd->isDone = true;
         }
     }
-    
+
+    handle_ray_list(&rayWeaponHandle.rayHandleList);
+    handle_ray_hits();
+    ent_resetRayWeapon(&rayWeaponHandle);
 }
 
-void updatePuppet(VectorEntity *vecEnt, bool isServer, inputCommand_t *inpCmd) {
-    interpolate_pos(vecEnt);
-    // interpolate_angle(vecEnt);
-    vecEnt->animSprite.pos[0] = vecEnt->pos.x;vecEnt->animSprite.pos[1] = vecEnt->pos.y;
-}
+#define INTERP_DELAY_MS 100
 
+static void animatePlayer(VectorEntity *vecEnt, float prevX, float prevY)
+{
+    PlayerData *player = stealth_player(vecEnt);
+    if(player == NULL)
+        return;
+    float dx = vecEnt->pos.x - prevX;
+    float dy = vecEnt->pos.y - prevY;
+    float dist = sqrtf(dx * dx + dy * dy);
+    player->moving = dist > 0.01f;
+    if(player->moving)
+        player->moveAngle = atan2f(dy, dx);
+    if(dist < 20.0f)
+        player->walkCycle += dist / 14.0f;
+    vecEnt->animSprite.curSprite = player->moving ? player->walkCycle : 0;
+    vecEnt->animSprite.pos[0] = vecEnt->pos.x;
+    vecEnt->animSprite.pos[1] = vecEnt->pos.y;
+}
 
 void entSys_updateClient() {
-    for(int i = 0; i < VECTOR_ENTITY_COUNT; i++) {
-        VectorEntity *vecEnt = &vectorEntityList[i];
-        if(!vecEnt->active) continue;
-
-        NetEntity *netEnt = &netEntityList[i];
-
-        inputCommandList_t *inpCmdList = &client.clRep.inputCommandList;
-        // inpCmdList = &vecget(cl_inputList.list, 0);
-
-        // updateVectorEntity(vecEnt, false, inpCmdList);
-        inputCommand_t *inpCmd;
-        int inpLen = inpCmd_getLen(inpCmdList);
-        for(int i = 0; i < inpLen;i++)
-        {
-            inpCmd = inpCmd_get(inpCmdList, i);
-            if(inpCmd->isDone) continue;
-            // inpCmd->isDone = true;
-
-            updatePuppet(vecEnt, false, inpCmd);
-            
-            // setCamera(vecEnt);
-
-            // if(netEnt->isPuppet) {
-            //     updatePuppet(vecEnt, false, inpCmd);
-            // }
-            // else {
-            //     updateVectorEntity(vecEnt, false, inpCmd);
-            // }
-        }
-
-
-        // else {
-        //     // updateVectorEntity(vecEnt, false, NULL);
-        //     updatePuppet(vecEnt);
-        // }
-    }
+    inputCommandList_t *inpCmdList = &client.clRep.inputCommandList;
+    unsigned long renderTime = getTimeMillis() - INTERP_DELAY_MS;
 
     for(int i = 0; i < VECTOR_ENTITY_COUNT; i++) {
         VectorEntity *vecEnt = &vectorEntityList[i];
         if(!vecEnt->active) continue;
-
         NetEntity *netEnt = &netEntityList[i];
+        float prevX = vecEnt->animSprite.pos[0];
+        float prevY = vecEnt->animSprite.pos[1];
 
-        inputCommandList_t *inpCmdList = &client.clRep.inputCommandList;
-
-        inputCommand_t *inpCmd;
-        int inpLen = inpCmd_getLen(inpCmdList);
-        for(int i = 0; i < inpLen;i++)
-        {
-            inpCmd = inpCmd_get(inpCmdList, i);
-            if(inpCmd->isDone) continue;
-            inpCmd->isDone = true;
+        if(netEnt->isPuppet) {
+            stealth_interpolate(vecEnt, renderTime);
+        } else {
+            /* Client-side prediction: replay every input the server has not
+             * acknowledged on top of the last authoritative position. */
+            int inpLen = inpCmd_getLen(inpCmdList);
+            for(int j = 0; j < inpLen; j++) {
+                inputCommand_t *inpCmd = inpCmd_get(inpCmdList, j);
+                if(inpCmd->isDone) continue;
+                input_func_common(inpCmd, vecEnt, false);
+                inpCmd->isDone = true;
+            }
+            if(shPrediction.pending) {
+                float ex = vecEnt->pos.x - shPrediction.beforeX;
+                float ey = vecEnt->pos.y - shPrediction.beforeY;
+                float error = sqrtf(ex * ex + ey * ey);
+                if(shTestLogs && error > 0.5f)
+                    printf("prediction correction %.2f\n", error);
+                shPrediction.pending = false;
+            }
         }
+
+        animatePlayer(vecEnt, prevX, prevY);
     }
 }
 

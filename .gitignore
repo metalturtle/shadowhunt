@@ -44,3 +44,7 @@ compile_commands.json
 *.zip
 .cache
 res
+
+# Extra build trees and Python caches
+build-*/
+__pycache__/

@@ -3,6 +3,7 @@
 #include "engine.h"
 #include "entity.h"
 #include "../movement/movement.h"
+#include "stealth.h"
 
 // camera_t worldCamera;
 // cl_inputList_t cl_inputList;
@@ -30,7 +31,93 @@ i2imap_t *mainEntMap;
 int MATCH_STATE = 0;
 endTimer_t matchTimer;
 
+#define MATCH_RESULTS_MS 3000
+
 bool killCmd = false;
+
+static int connectedPlayerCount(void)
+{
+    int connectedPlayers = 0;
+
+    for(int conID = 0; conID < server.clRepList.size; conID++) {
+        if(!bm_getBitVal(server.clRepBitMap.arr, conID))
+            continue;
+
+        int entID = i2imap_get(mainEntMap, conID);
+        if(entID < 0 || entID >= VECTOR_ENTITY_COUNT || !vectorEntityList[entID].active)
+            continue;
+        connectedPlayers++;
+    }
+
+    return connectedPlayers;
+}
+
+bool eng_roundIsRunning(void)
+{
+    return MATCH_STATE == MATCH_RUNNING;
+}
+
+static const char *winnerName(int winner)
+{
+    return winner == SH_WINNER_HUNTERS ? "hunters" :
+           winner == SH_WINNER_HIDERS ? "hiders" : "none";
+}
+
+static void startRunning(void)
+{
+    stealth_startRound();
+    MATCH_STATE = MATCH_RUNNING;
+    printf("match state: running\n");
+}
+
+static void updateRoundState(void)
+{
+    int connectedPlayers = connectedPlayerCount();
+
+    switch(MATCH_STATE) {
+        case MATCH_WAITING:
+            /* A short lobby countdown lets friends who connect together all
+             * make it into the first round. */
+            if(connectedPlayers < 2) {
+                shGame.lobbyEndAt = 0;
+            } else if(shGame.lobbyEndAt == 0) {
+                shGame.lobbyEndAt = getTimeMillis() + SH_LOBBY_MS;
+                printf("match state: lobby countdown\n");
+            } else if(getTimeMillis() >= shGame.lobbyEndAt) {
+                shGame.lobbyEndAt = 0;
+                startRunning();
+            }
+            break;
+        case MATCH_RUNNING:
+            if(connectedPlayers < 2) {
+                stealth_resetForWaiting();
+                MATCH_STATE = MATCH_WAITING;
+                printf("match state: waiting\n");
+                break;
+            }
+            if(stealth_evaluateRound() != SH_WINNER_NONE) {
+                MATCH_STATE = MATCH_RESULTS;
+                printf("match state: results\n");
+                printf("round winner: %s\n", winnerName(shGame.winner));
+                startTimer(&matchTimer, SH_RESULTS_MS);
+            }
+            break;
+        case MATCH_RESULTS:
+            if(checkTimer(&matchTimer)) {
+                if(connectedPlayers >= 2) {
+                    startRunning();
+                } else {
+                    stealth_resetForWaiting();
+                    MATCH_STATE = MATCH_WAITING;
+                    printf("match state: waiting\n");
+                }
+            }
+            break;
+        default:
+            MATCH_STATE = MATCH_WAITING;
+            break;
+    }
+}
 
 ///////////////////////////////////////////////////////////////////////
 
@@ -46,91 +133,18 @@ void clearWeaponShootStatus()
 
         
         int entID = i2imap_get(mainEntMap, i);
+        if(entID < 0 || entID >= VECTOR_ENTITY_COUNT || !vectorEntityList[entID].active)
+            continue;
         // vecset(vectorEntityList.weaponShotList, entID, 0);
-        PlayerData *playerData = &playerDataList[entID];
+        int playerID = vectorEntityList[entID].externalID;
+        if(playerID < 0 || playerID >= 8)
+            continue;
+        PlayerData *playerData = &playerDataList[playerID];
         playerData->weaponShot = 0;
     }
 }
 
 
-
-
-void interpolate_angle(VectorEntity *vecEnt)
-{
-    long simTime = getTimeMillis();
-    simTime -= 200;
-
-    // Puppet *puppet = &puppetList[vecEnt->externalID];
-
-        angleInterpolate_t *angIntp = &vecEnt->angleInterpolate;
-        animatedSprite_t *sprite = &vecEnt->animSprite;
-
-
-        // if(e == MAIN_ENT_ID)
-        //     return;
-
-
-        if(angIntp->last < 3)
-            return;
-        
-
-        int lastPos = -1;
-        int nextPos = -1;
-        for(int j = 0; j < 3; j++)
-        {
-            long curTime = angIntp->timestamp[(angIntp->last + j) % 3];
-            if(curTime > simTime)
-            {
-                if(j > 0) {
-                    lastPos = (angIntp->last + j + 3 - 1) % 3;
-                    nextPos = (angIntp->last + j) % 3;
-                }
-
-                break;
-            }
-        }
-
-
-        if(lastPos == -1)
-            return;
-
-
-        if(angIntp->timestamp[nextPos] == angIntp->timestamp[lastPos])
-        {
-            printf("zero difference betwen timestamp %d %d %lu\n", lastPos, nextPos, angIntp->timestamp[nextPos]);
-            return;
-        }
-
-
-        float nextAng = rad2deg(angIntp->angle[nextPos]);
-        float lastAng = rad2deg(angIntp->angle[lastPos]);
-
-
-        if(nextAng < 0) nextAng = 360 + nextAng;
-        if(lastAng < 0) lastAng = 360 + lastAng;
-
-
-        float a = ((float)(angIntp->timestamp[nextPos] - simTime))
-            /func_absFloat((float)(angIntp->timestamp[nextPos] - angIntp->timestamp[lastPos]));
-
-        
-        float diff = nextAng - lastAng;
-        int sig = SIGNUM(diff);
-
-        
-        float diff2 = 360 - ABS(diff);
-        if(ABS(diff2) < ABS(diff)) {
-            diff = -1 * sig * diff2;
-        }
-        else {
-            diff2 = diff;
-        }
-        diff = diff2;
-        
-
-        float angToSet = lastAng + diff * (1 - a);
-        sprite->angle = deg2rad(angToSet);
-}
 
 
 void add_sprite_for_render()
@@ -303,19 +317,22 @@ void setupPuppet(VectorEntity *vecEnt, SaveDataHandler* saveHandle) {
 
 intPair_t ent_setupEntityForClient(int conID, netcon_t *con)
 {
-    int entID;
-
     intPair_t pair;
     
     // printf("add vector entity\n");
     // entID = ent_addVectorEntity(true);
     // entID = 
     VectorEntity *vecEnt = addSprite(0, NULL, true, false);
+    if(vecEnt == NULL) {
+        pair.a = -1;
+        pair.b = -1;
+        return pair;
+    }
 
     pair.a = vecEnt->entID;
     pair.b = vecEnt->typeID;
 
-    i2imap_put(mainEntMap, conID, entID);
+    i2imap_put(mainEntMap, conID, vecEnt->entID);
     return pair;
 }
 
@@ -323,10 +340,11 @@ intPair_t ent_removeEntityFromClient(int conID, netcon_t *con)
 {
     intPair_t pair;
     int entID = i2imap_get(mainEntMap, conID);
-    // ent_removeVectorEntity(entID);
-    
 
     i2imap_remove(mainEntMap, conID);
+
+    if(entID >= 0 && entID < VECTOR_ENTITY_COUNT && vectorEntityList[entID].active)
+        ent_remove(entID);
 
     pair.a = entID;
     pair.b = 0;
@@ -378,6 +396,8 @@ void eng_init() {
     ent_init();
 
     entSys_init();
+
+    stealth_init();
 
 
     // initPickupList();
@@ -432,8 +452,16 @@ void eng_updateServer() {
     }
 
     
-    // serv_frame();
+    static unsigned long lastServerFrame;
+    unsigned long now = getTimeMillis();
+    float elapsed = lastServerFrame == 0 ? 0 : (now - lastServerFrame) / 1000.0f;
+    lastServerFrame = now;
+
+    serv_checkTimeout();
+    updateRoundState();
+    stealth_refillMoveBudgets(elapsed);
     entSys_updateServer();
+    stealth_serverTick();
 
     // clear
 
@@ -474,6 +502,7 @@ void eng_updateClient() {
                 len = ev->value;
                 netaddr_t *fromAddr = (netaddr_t *) buf;
                 buf += sizeof(netaddr_t);
+                len -= sizeof(netaddr_t);
                 cl_packetEvent(fromAddr, buf, len);
                 zidfree(ev->ptr);
                 break;

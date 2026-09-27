@@ -10,11 +10,71 @@
 // cpSpace *space;
 float timeStep = 1.0/60.0;
 
+extern char *findAssetPath(const char *relative);
+
 world_t world;
 // moveList_t moveList;
 
 float MINSTEP = 0.01;
 
+
+static int readPointList(cJSON *listJSON, worldPoint_t *points, int maxPoints)
+{
+    cJSON *pointJSON;
+    int count = 0;
+    cJSON_ArrayForEach(pointJSON, listJSON)
+    {
+        if(count >= maxPoints || cJSON_GetArraySize(pointJSON) < 2)
+            break;
+        points[count].x = (float)cJSON_GetNumberValue(cJSON_GetArrayItem(pointJSON, 0));
+        points[count].y = (float)cJSON_GetNumberValue(cJSON_GetArrayItem(pointJSON, 1));
+        count++;
+    }
+    return count;
+}
+
+static void loadStealthLayout(cJSON *levelJSON)
+{
+    cJSON *lightJSON;
+    cJSON *lightListJSON = cJSON_GetObjectItemCaseSensitive(
+        cJSON_GetObjectItemCaseSensitive(levelJSON, "light"), "object");
+    cJSON *stealthJSON = cJSON_GetObjectItemCaseSensitive(levelJSON, "stealth");
+
+    world.lightCount = 0;
+    cJSON_ArrayForEach(lightJSON, lightListJSON)
+    {
+        if(world.lightCount >= SH_MAX_LIGHTS || cJSON_GetArraySize(lightJSON) < 3)
+            break;
+        sh_light_t *light = &world.lights[world.lightCount++];
+        light->x = (float)cJSON_GetNumberValue(cJSON_GetArrayItem(lightJSON, 0));
+        light->y = (float)cJSON_GetNumberValue(cJSON_GetArrayItem(lightJSON, 1));
+        light->radius = (float)cJSON_GetNumberValue(cJSON_GetArrayItem(lightJSON, 2));
+    }
+
+    world.hunterSpawnCount = readPointList(
+        cJSON_GetObjectItemCaseSensitive(stealthJSON, "hunter_spawns"),
+        world.hunterSpawns, SH_MAX_SPAWNS);
+    world.hiderSpawnCount = readPointList(
+        cJSON_GetObjectItemCaseSensitive(stealthJSON, "hider_spawns"),
+        world.hiderSpawns, SH_MAX_SPAWNS);
+    world.pelletCount = readPointList(
+        cJSON_GetObjectItemCaseSensitive(stealthJSON, "pellets"),
+        world.pellets, SH_MAX_PELLETS);
+
+    /* A level without stealth data still has somewhere to put everyone. */
+    if(world.hunterSpawnCount == 0) {
+        world.hunterSpawns[0] = (worldPoint_t){300, 350};
+        world.hunterSpawnCount = 1;
+    }
+    if(world.hiderSpawnCount == 0) {
+        world.hiderSpawns[0] = (worldPoint_t){80, 335};
+        world.hiderSpawnCount = 1;
+    }
+
+    printf("stealth layout: %d lights, %d hunter spawns, %d hider spawns, %d pellets\n",
+           world.lightCount, world.hunterSpawnCount, world.hiderSpawnCount,
+           world.pelletCount);
+}
 
 void world_setup()
 {
@@ -29,11 +89,14 @@ void world_setup()
     int i;
     char *loadPath;
 
-    SDL_asprintf(&loadPath, "%s%s", SDL_GetBasePath(), "levels//level.json");
-    fbuf = getFileString("levels//level.json", TEMPORARYZONE);
+    /* SHADOWHUNT_LEVEL swaps in a gameplay fixture (tests use small arenas). */
+    const char *levelOverride = getenv("SHADOWHUNT_LEVEL");
+    char *levelPath = findAssetPath(levelOverride != NULL && levelOverride[0] != '\0' ?
+                                    levelOverride : "levels/level.json");
+    fbuf = getFileString(levelPath, TEMPORARYZONE);
+    SDL_free(levelPath);
     if(fbuf == NULL) {
-        printf("couldnt open file levels//level.json\n");
-        return;
+        com_error(ERR_FATAL, "could not open the level file\n");
     }
     levelJSON = cJSON_Parse(fbuf);
 
@@ -60,6 +123,8 @@ void world_setup()
         i++;
     }
     world.worldWallSize = arrSize;
+
+    loadStealthLayout(levelJSON);
 
     cJSON_free(levelJSON);
     zidfree(fbuf);

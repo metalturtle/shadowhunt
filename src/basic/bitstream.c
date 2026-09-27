@@ -47,6 +47,25 @@ void stream_init(bitstream_t *bs,byte *buf, int size)
     bs->curbyte = 0;
     bs->curbit = 0;
     bs->datalen = 0;
+    bs->overflowed = qfalse;
+}
+
+qbool stream_canRead(const bitstream_t *bs, unsigned int bitLen)
+{
+    unsigned long long limitBits;
+    unsigned long long cursorBits;
+
+    if(bs == NULL || bs->buf == NULL || bs->overflowed)
+        return qfalse;
+
+    limitBits = (unsigned long long)(bs->datalen > 0 ? bs->datalen : bs->bufsize) * 8ULL;
+    cursorBits = (unsigned long long)bs->curbyte * 8ULL + bs->curbit;
+    return cursorBits <= limitBits && bitLen <= limitBits - cursorBits ? qtrue : qfalse;
+}
+
+qbool stream_overflowed(const bitstream_t *bs)
+{
+    return bs == NULL || bs->overflowed;
 }
 
 static void clearbytes(bitstream_t *bs, int inc)
@@ -70,6 +89,11 @@ void stream_writeBit(bitstream_t *bs, int val)
 
 int stream_readBit(bitstream_t* bs)
 {
+    if(!stream_canRead(bs, 1)) {
+        if(bs != NULL)
+            bs->overflowed = qtrue;
+        return 0;
+    }
     int val = (bs->buf[bs->curbyte] & ( 1<<bs->curbit )) >> bs->curbit;
     inccurbit(bs);
     return val;
@@ -87,13 +111,7 @@ void stream_writeByte(bitstream_t* bs, unsigned char b)
 
 unsigned char stream_readByte(bitstream_t* bs)
 {
-    unsigned char val = 0;
-    val = (bs->buf[bs->curbyte] & BYTEFLAG) >> bs->curbit;
-    bs->curbyte++;
-    if(bs->curbit) {
-        val |= bs->buf[bs->curbyte] << ( BYTESIZE - bs->curbit );
-    }
-    return val;
+    return (unsigned char)stream_readLongBits(bs, 8);
 }
 
 void stream_writeInt(bitstream_t* bs, unsigned int b)
@@ -108,13 +126,7 @@ void stream_writeInt(bitstream_t* bs, unsigned int b)
 
 unsigned int stream_readInt(bitstream_t* bs)
 {
-    unsigned int val = ( (*( (unsigned int*) &bs->buf[bs->curbyte] )) & INTFLAG) >> bs->curbit;
-    // inccurbyte(bs, 4);
-    bs->curbyte += 4;
-    if(bs->curbit) {
-        val |= (bs->buf[bs->curbyte] << (INTSIZE - bs->curbit));
-    }
-    return val;
+    return (unsigned int)stream_readLongBits(bs, 32);
 }
 
 // void stream_writeintv(bitstream_t *bs, unsigned int b, int bits)
@@ -155,11 +167,16 @@ void stream_writeLongBits(bitstream_t* bs, unsigned long int b, int bits)
 unsigned long int stream_readLongBits(bitstream_t* bs, int bits)
 {
     unsigned long int b = 0;
+
+    if(bits < 0 || bits > 64 || !stream_canRead(bs, (unsigned int)bits)) {
+        if(bs != NULL)
+            bs->overflowed = qtrue;
+        return 0;
+    }
     
     for(int i = 0; i < bits; i++)
     {
-        b |= ((((bs->buf[bs->curbyte] & (1 << bs->curbit)) >> bs->curbit) & 1) << i);
-        inccurbit(bs);
+        b |= (unsigned long int)stream_readBit(bs) << i;
     }
     return b;
 }
@@ -204,12 +221,7 @@ unsigned long int stream_readVarLong(bitstream_t *bs)
 
 unsigned int stream_readLong(bitstream_t* bs)
 {
-    unsigned long int val = ( *( (unsigned long int*) &bs->buf[bs->curbyte] ) & LINTFLAG) >> bs->curbit;
-    bs->curbyte += 8;
-    if(bs->curbit) {
-        val |= bs->buf[bs->curbyte] << (LINTSIZE - bs->curbit);
-    }
-    return val;
+    return (unsigned int)stream_readLongBits(bs, 64);
 }
 
 void stream_writeDouble(bitstream_t* bs, long double f)
@@ -346,6 +358,15 @@ void stream_copyBitsData(bitstream_t *bs, byte *data, int bitLen)
 
 void stream_skipBits(bitstream_t *bs, int bitLen)
 {
+    if(bitLen < 0 || !stream_canRead(bs, (unsigned int)bitLen)) {
+        if(bs != NULL)
+            bs->overflowed = qtrue;
+        return;
+    }
     bs->curbyte += bitLen/8;
     bs->curbit += bitLen%8;
+    if(bs->curbit >= 8) {
+        bs->curbyte += bs->curbit / 8;
+        bs->curbit %= 8;
+    }
 }

@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 # project(ShadowHunt C CXX)
 project(ShadowHunt)
 
+include(CTest)
+
 # Export compile commands for IDEs and linters
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -83,7 +85,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/lib)
 # We still need a main.cpp for the executable entry point
 # For now, keep unix_main in the executable but this creates duplicate symbols
 # TODO: Split unix_main.cpp to separate main() from other functions
-add_executable(unix_main src/basic/basic.c src/basic/cvar.c src/basic/bitstream.c src/basic/files.c src/basic/cJSON.c src/unix/unix_main.c src/unix/unix_net.c src/render/sdl_render.c src/movement/movement.c src/engine/engine.c src/engine/net_conlayer.c src/engine/sv_main.c src/engine/cl_main.c src/engine/streammanage.c src/engine/entity.c src/engine/netEntity.c src/movement/ray.c src/engine/inputCommand.c src/engine/entitySystem.c)
+add_executable(unix_main src/basic/basic.c src/basic/cvar.c src/basic/bitstream.c src/basic/files.c src/basic/cJSON.c src/core/raycast.c src/core/stealth_rules.c src/engine/stealth.c src/unix/unix_main.c src/unix/unix_net.c src/render/sdl_render.c src/movement/movement.c src/engine/engine.c src/engine/net_conlayer.c src/engine/sv_main.c src/engine/cl_main.c src/engine/streammanage.c src/engine/entity.c src/engine/netEntity.c src/movement/ray.c src/engine/inputCommand.c src/engine/entitySystem.c)
 
 target_include_directories(unix_main PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/vendored/Chipmunk2D/include)
 # target_link_libraries(unix_main png)
@@ -149,3 +151,89 @@ add_custom_target(copy-resource-files ALL
 # target_include_directories(test_netEntity PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/vendored/Chipmunk2D/include)
 # target_link_libraries(test_netEntity SDL3::SDL3)
 # target_link_libraries(test_netEntity m)  # math library
+
+if(BUILD_TESTING)
+    add_executable(raycast_test tests/raycast_test.c src/core/raycast.c)
+    target_include_directories(raycast_test PRIVATE ${CMAKE_SOURCE_DIR}/src/core)
+    add_test(NAME raycast_geometry COMMAND raycast_test)
+
+    add_executable(stealth_rules_test tests/stealth_rules_test.c src/core/stealth_rules.c)
+    target_include_directories(stealth_rules_test PRIVATE ${CMAKE_SOURCE_DIR}/src/core)
+    add_test(NAME stealth_rules COMMAND stealth_rules_test)
+
+    find_package(Python3 COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test(
+            NAME multiplayer_smoke_4_clients
+            COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tests/multiplayer_smoke.py
+                    --executable $<TARGET_FILE:unix_main>
+                    --clients 4
+                    --timeout 15
+                    --verify-authority-disconnect
+                    --verify-malformed
+        )
+        set_tests_properties(multiplayer_smoke_4_clients PROPERTIES TIMEOUT 60)
+
+        add_test(
+            NAME multiplayer_round_rematch
+            COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tests/multiplayer_smoke.py
+                    --executable $<TARGET_FILE:unix_main>
+                    --clients 4
+                    --timeout 15
+                    --level ${CMAKE_SOURCE_DIR}/tests/fixtures/stealth_range.json
+                    --verify-round
+        )
+        set_tests_properties(multiplayer_round_rematch PROPERTIES TIMEOUT 60)
+
+        add_test(
+            NAME stealth_visibility_4_clients
+            COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tests/multiplayer_smoke.py
+                    --executable $<TARGET_FILE:unix_main>
+                    --clients 4
+                    --timeout 15
+                    --verify-stealth
+        )
+        set_tests_properties(stealth_visibility_4_clients PROPERTIES TIMEOUT 60)
+
+        add_test(
+            NAME stealth_full_server_8_clients
+            COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tests/multiplayer_smoke.py
+                    --executable $<TARGET_FILE:unix_main>
+                    --clients 8
+                    --timeout 20
+                    --verify-stealth
+                    --hold-seconds 5
+        )
+        set_tests_properties(stealth_full_server_8_clients PROPERTIES TIMEOUT 60)
+
+        add_test(
+            NAME stealth_lit_rematch_visibility
+            COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tests/multiplayer_smoke.py
+                    --executable $<TARGET_FILE:unix_main>
+                    --clients 2
+                    --timeout 15
+                    --level ${CMAKE_SOURCE_DIR}/tests/fixtures/stealth_lit.json
+                    --round-seconds 3
+                    --verify-lit-rounds
+        )
+        set_tests_properties(stealth_lit_rematch_visibility PROPERTIES TIMEOUT 60)
+
+        add_test(
+            NAME stealth_pellet_tag_duel
+            COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tests/multiplayer_smoke.py
+                    --executable $<TARGET_FILE:unix_main>
+                    --clients 2
+                    --timeout 15
+                    --level ${CMAKE_SOURCE_DIR}/tests/fixtures/stealth_duel.json
+                    --round-seconds 12
+                    --verify-tag
+        )
+        set_tests_properties(stealth_pellet_tag_duel PROPERTIES TIMEOUT 60)
+    endif()
+endif()

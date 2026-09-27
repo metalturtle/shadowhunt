@@ -48,6 +48,7 @@ typedef struct bitstream_st {
     byte *buf;
     unsigned int curbyte;
     unsigned int curbit;
+    qbool overflowed;
 } bitstream_t;
 
 extern void stream_init(bitstream_t *bs,byte *buf, int size);
@@ -72,6 +73,8 @@ extern unsigned long int stream_readLongBits(bitstream_t *bs, int bits);
 extern unsigned long int stream_readVarLong(bitstream_t *bs);
 extern void stream_copyBitsData(bitstream_t *bs, byte *data, int bitLen);
 extern void stream_skipBits(bitstream_t *bs, int bitLen);
+extern qbool stream_overflowed(const bitstream_t *bs);
+extern qbool stream_canRead(const bitstream_t *bs, unsigned int bitLen);
 
 /********************NETWORK SYSTEM********************/
 

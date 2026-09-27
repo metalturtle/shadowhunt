@@ -36,6 +36,9 @@ void inpCmd_init(inputCommandList_t *inpCmdList)
 
     inpCmdList->start = 1;
     inpCmdList->end = 1;
+    /* Start aimed straight ahead until the first mouse-motion event. */
+    inpCmdConfig.mouseX = 1.0f;
+    inpCmdConfig.mouseY = 0.5f;
     // inpCmdList->lastRecordID = 0;
 
 }

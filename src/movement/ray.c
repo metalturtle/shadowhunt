@@ -2,6 +2,8 @@
 #include "../basic/world_def.h"
 #include "movement.h"
 #include "../engine/entity.h"
+#include "../core/raycast.h"
+#include "../engine/stealth.h"
 
 void ent_initRayRenderList()
 {
@@ -41,8 +43,15 @@ void ent_initRayHandleList(rayHandleList_t *rayHandleList)
 
 int ent_addRayEntity(rayHandleList_t *rayHandleList, int entID )
 {
-    int id = bm_findEmpty(rayHandleList->rayEntityList.entBitmap.arr,
-         vecsize(rayHandleList->rayEntityList.entBitmap));
+    /* Reuse a released slot so rejoining players never grow the list past
+     * the bitmap's fixed capacity. */
+    int id = -1;
+    for(int i = 0; i < vecsize(rayHandleList->rayEntityList.entList); i++) {
+        if(!bm_getBitVal(rayHandleList->rayEntityList.entBitmap.arr, i)) {
+            id = i;
+            break;
+        }
+    }
     if(id < 0)
     {
         id = vecsize(rayHandleList->rayEntityList.entList);
@@ -50,11 +59,12 @@ int ent_addRayEntity(rayHandleList_t *rayHandleList, int entID )
         vecpushempty(rayHandleList->rayEntityList.entIDList, int);
     }
 
-    int rayEntID = vecget(rayHandleList->rayEntityList.entList, id);
+    int rayEntID = entID;
     // vec3set(entMove->pos, setMove->pos);
     // rect2set(entMove->rect, setMove->rect);
     // vec3xyz(entMove->dir, 0, 0, 0);
     vecset(rayHandleList->rayEntityList.entIDList, id, rayEntID);
+    vecset(rayHandleList->rayEntityList.entList, id, rayEntID);
 
     bm_setBitVal(rayHandleList->rayEntityList.entBitmap.arr, id, 1);
     
@@ -129,49 +139,7 @@ float ray_intersect(float pos[2],float dir[2],float p1[2],float p2[2]) {
 
 float check_intersection(float pos[2], float dir[2], float wall[4]) 
 { 
-    float u = 999;
-    float stat_p[2][2];
-    // float staticNormalAngle = 0;
-    float calc;
-
-    if(pos[0] < wall[0])
-    {
-        vec2set(stat_p[0], wall);
-        vec2xy(stat_p[1], 0, wall[3]);
-
-        calc = ray_intersect(pos,dir,stat_p[0],stat_p[1]);
-        u = MIN(calc, u);
-        // staticNormalAngle=180;
-    } else if(pos[0] > wall[0] + wall[2])
-    {
-        vec2xy(stat_p[0], wall[0] + wall[2], wall[1]);
-        vec2xy(stat_p[1], 0, wall[3]);
-
-        calc = ray_intersect(pos,dir,stat_p[0],stat_p[1]);
-        u = MIN(calc, u);
-        // staticNormalAngle=0;
-    }
-    if(pos[1] < wall[1])
-    {
-        vec2xy(stat_p[0], wall[0], wall[1]);
-        vec2xy(stat_p[1], wall[2], 0);
-
-
-        calc = ray_intersect(pos,dir,stat_p[0],stat_p[1]);
-        u = MIN(calc, u);
-        // staticNormalAngle=-90;
-    }
-    else if (pos[1] > wall[1] + wall[3])
-    {
-        vec2xy(stat_p[0], wall[0], wall[1] + wall[3]);
-        vec2xy(stat_p[1], wall[2], 0);
-
-
-        calc = ray_intersect(pos,dir,stat_p[0],stat_p[1]);
-        u = MIN(calc, u);
-        // staticNormalAngle=90;
-    }
-    return u;	
+    return ray_intersect_rect(pos, dir, wall);
 }
 
 
@@ -182,6 +150,7 @@ float rdir[3];
 
 
 float u = 1, temp;
+int closestToID = -1;
 
 rpos[0] = vecget(rayHandleList->emittedRayList.xList, rayID);
 rpos[1] = vecget(rayHandleList->emittedRayList.yList, rayID);
@@ -199,6 +168,7 @@ for(int i = 0; i < world.worldWallSize; i++)
     temp = check_intersection(rpos, rdir, wall);
     if(u > temp) {
         u = temp;
+        closestToID = -1;
     }
 }
 
@@ -215,7 +185,11 @@ for(int i = 0; i < vecsize(rayHandleList->rayEntityList.entList); i++)
         continue;
 
     int rayEntID = vecget(rayHandleList->rayEntityList.entList, i);
+    if(rayEntID < 0 || rayEntID >= VECTOR_ENTITY_COUNT)
+        continue;
     VectorEntity *vecEnt = &vectorEntityList[rayEntID];
+    if(!vecEnt->active || vecEnt->health <= 0 || !stealth_canBeShot(vecEnt))
+        continue;
     // rect2set(wall, vecEnt->rect);
     wall[0] = vecEnt->rect.x; wall[1] = vecEnt->rect.y; wall[2] = vecEnt->rect.w; wall[3] = vecEnt->rect.h;
     // vec2add(wall, wall, vecEnt->pos);
@@ -226,14 +200,17 @@ for(int i = 0; i < vecsize(rayHandleList->rayEntityList.entList); i++)
     temp = check_intersection(rpos, rdir, wall);
     if(u > temp) {
         u = temp;
-
-        ent_setHitEntity(rayHandleList, rayID, fromID, toID);
+        closestToID = toID;
     }
+}
+
+if(closestToID >= 0) {
+    ent_setHitEntity(rayHandleList, rayID, fromID, closestToID);
 }
 
 vec3mult(rdir, u);
 
-printf("u val %f  %f %f,%f \n", u, temp, rdir[0], rdir[1]);
+stealth_recordShot(rpos[0], rpos[1], rpos[0] + rdir[0], rpos[1] + rdir[1]);
 
 vecset(rayHandleList->emittedRayList.xDirList, rayID, rdir[0]);
 vecset(rayHandleList->emittedRayList.yDirList, rayID, rdir[1]);
@@ -253,22 +230,8 @@ for(int i = 0; i < vecsize(rayHandleList->rayHitList.fromList); i++)
     int toID = vecget(rayHandleList->rayHitList.toList, i);
     
 
-    // int health = vecget(vectorEntityList.healthList, toID);
-    int health = vectorEntityList[toID].health;
-
-    if(health > 0) {
-        health -= 30;
-        // vecset(vectorEntityList.healthList, toID, health);
-        vectorEntityList[toID].health = health;
-        // ent_setStateFlags(VECTOR_SERIALIZER, toID, 3, 1);
-        printf("setting health state flag \n");
-    }
-    
-
-    // animatedSprite_t *sprite = &vecget(vectorEntityList.animSpriteList, toID);
-    // sprite->rect[2] /= 2;
-    // sprite->rect[3] /= 2;
-    printf("hit entities: %d %d %d \n", fromID, toID, health);
+    stealth_applyShotHit(fromID, toID);
+    printf("hit entities: %d %d %d \n", fromID, toID, (int)vectorEntityList[toID].health);
 }
 }
 

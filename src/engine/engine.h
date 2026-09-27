@@ -124,6 +124,7 @@ extern void eng_handleEvents();
 /********************CLIENT INPUT********************/
 
 #define INPCMD_MAX_SIZE 32
+#define MAX_MULTIPLAYER_CLIENTS 8
 
 struct vec2_st
 {
@@ -206,6 +207,15 @@ typedef enum
     SYS_RUN,
     SYS_DISCONNECTED
 } sysState_e;
+
+typedef enum
+{
+    MATCH_WAITING,
+    MATCH_RUNNING,
+    MATCH_RESULTS
+} matchState_e;
+
+extern int MATCH_STATE;
 
 typedef enum
 {
@@ -302,6 +312,7 @@ extern void serv_frame();
 extern void serv_packetEvent(netaddr_t *fromAddress, byte *data, int len);
 // extern void serv_addSyncedEnt(int, int);
 extern void serv_removeSyncedEnt(int entID, int entType);
+extern void serv_checkTimeout(void);
 
 /********************CLIENT********************/
 
@@ -333,6 +344,7 @@ extern void cl_frame();
 extern void cl_keyEvent(int key);
 extern void cl_packetEvent(netaddr_t *fromAddress, byte *data, int len);
 extern void cl_mouseEvent(float x, float y);
+extern void cl_getMouse(float *x, float *y);
 
 extern server_t server;
 extern client_t client;
@@ -342,6 +354,7 @@ extern void world_load();
 
 extern void eng_processServerEntities();
 extern void eng_processClientEntities();
+extern bool eng_roundIsRunning(void);
 
 struct EngineParameters_st {
     // SDL_FPoint cameraPos;

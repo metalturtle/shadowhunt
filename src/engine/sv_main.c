@@ -3,6 +3,7 @@
 #include "../basic/world_def.h"
 #include "engine.h"
 #include "entity.h"
+#include "stealth.h"
 
 static netcon_t *nextCon;
 
@@ -87,6 +88,16 @@ serv_clrep_t *serv_addClient()
     serv_clrep_t *clRep;
     char addrStr[64];
 
+    int activeClients = 0;
+    for(int i = 0; i < server.clRepList.size; i++) {
+        if(bm_getBitVal(server.clRepBitMap.arr, i))
+            activeClients++;
+    }
+    if(activeClients >= MAX_MULTIPLAYER_CLIENTS) {
+        printf("server full: rejecting connection\n");
+        return NULL;
+    }
+
     int freeid = bm_findEmpty(server.clRepBitMap.arr, server.clRepBitMap.size);
     
     if(freeid < 0)
@@ -130,22 +141,26 @@ serv_clrep_t *serv_addClient()
 
 void serv_disconnectClient(int conID)
 {
+    if(conID < 0 || conID >= server.clRepList.size ||
+       !bm_getBitVal(server.clRepBitMap.arr, conID))
+        return;
+
     serv_clrep_t *clRep;
     clRep = &vecget(server.clRepList, conID);
+    netaddr_t remoteAddress = clRep->con->remoteAddress;
 
     intPair_t entIDPair = ent_removeEntityFromClient(conID, clRep->con);
+    printf("disconnecting client. conid=%d entity=%d\n", conID, entIDPair.a);
 
 
     ent_handleClientLeave(clRep);
 
 
+    s2imap_remove(server.clRepMap, netAddrToString(remoteAddress));
+
     zidfree(clRep->con);
-
-
+    clRep->con = NULL;
     bm_setBitVal(server.clRepBitMap.arr, conID, 0);
-
-
-    s2imap_remove(server.clRepMap, netAddrToString(clRep->con->remoteAddress));
 
 
     inputCommandList_t *inpCmdList = &clRep->inputCommandList;
@@ -166,8 +181,7 @@ void serv_checkTimeout()
         
         if(checkTimer(&clRep->lastRecvTimer))
         {
-            // serv_disconnectClient(i);
-            // com_error(ERR_FATAL, "disconnect\n");
+            serv_disconnectClient(i);
         }
     }
 }
@@ -200,8 +214,17 @@ void serv_readInputCmd(int conID, serv_clrep_t *clRep, bitstream_t *readStream)
 
     inputCommandList = &clRep->inputCommandList;
 
+    if(!stream_canRead(readStream, 64))
+        return;
+
     recordID = stream_readInt(readStream);
     arrLen = stream_readInt(readStream);
+
+    if(arrLen < 0 || arrLen > INPCMD_MAX_SIZE ||
+       !stream_canRead(readStream, (unsigned int)arrLen * (inpCmdConfig.keyBitLen + 96U))) {
+        readStream->overflowed = qtrue;
+        return;
+    }
 
     // printf("read input cmd %d %d\n", conID, arrLen);
     // int lastRecordID = stream_readInt(readStream);
@@ -224,6 +247,8 @@ void serv_readInputCmd(int conID, serv_clrep_t *clRep, bitstream_t *readStream)
         int mouseYInt = stream_readInt(readStream);
         float deltaTime = stream_readInt( readStream);
         deltaTime /= (float)(1000 * 1000);
+        if(deltaTime < 0) deltaTime = 0;
+        if(deltaTime > 0.05f) deltaTime = 0.05f;
         // printf("server received delta time %f \n", deltaTime);
 
         if((recordID + i) < inputCommandList->end)
@@ -239,6 +264,8 @@ void serv_readInputCmd(int conID, serv_clrep_t *clRep, bitstream_t *readStream)
 
         inpCmd->mouseX = ((float)mouseXInt)/1000.0;
         inpCmd->mouseY = ((float)mouseYInt)/1000.0;
+        inpCmd->mouseX = MAX(0.0f, MIN(1.0f, inpCmd->mouseX));
+        inpCmd->mouseY = MAX(0.0f, MIN(1.0f, inpCmd->mouseY));
         inpCmd->deltaTime = deltaTime;
     }
 
@@ -273,14 +300,15 @@ void serv_readInputCmd(int conID, serv_clrep_t *clRep, bitstream_t *readStream)
 
 void serv_readClientMessage(int conID, serv_clrep_t *clRep, bitstream_t *readStream)
 {
-    byte cmd;
+    byte cmd = 0;
     netcon_t *con;
 
     con = clRep->con;
 
     // serv_acknowledge(conID, clRep, readStream);
 
-    while((cmd = stream_readByte(readStream)) != CLCMD_END)
+    while(stream_canRead(readStream, 8) &&
+          (cmd = stream_readByte(readStream)) != CLCMD_END)
     {
         if(cmd == CLCMD_SYS) {
             serv_readSysCmd(clRep, readStream);
@@ -293,16 +321,15 @@ void serv_readClientMessage(int conID, serv_clrep_t *clRep, bitstream_t *readStr
             serv_ackEntities(conID, clRep, readStream);
         }
         else {
-            break;
+            return;
         }
+
+        if(stream_overflowed(readStream))
+            return;
     }
 
-    if(cmd != CLCMD_END)
-    {
-        cmd = stream_readByte(readStream);
-        printf("checking last cmd=%d, netcmd_end=%d \n", cmd, CLCMD_END);
-        com_error(ERR_FATAL, "error: last cmd is not equal to CLCMD_END\n");
-    }
+    if(stream_overflowed(readStream) || cmd != CLCMD_END)
+        return;
 
 }
 
@@ -310,6 +337,9 @@ int serv_readNewConnection(netcon_t *con, bitstream_t *readStream)
 {
     byte cmd;
     byte state;
+
+    if(!stream_canRead(readStream, 16))
+        return -1;
 
     cmd = stream_readByte(readStream);
 
@@ -344,7 +374,8 @@ void serv_packetEvent(netaddr_t *fromAddress, byte *data, int len)
         stream_init(&bs, data, len);
         bs.datalen = len;
 
-        netcon_process(nextCon, &bs);
+        if(netcon_process(nextCon, &bs) < 0)
+            return;
 
         if(nextCon->recvState != NETCON_FRAGMENT)
         {
@@ -354,13 +385,15 @@ void serv_packetEvent(netaddr_t *fromAddress, byte *data, int len)
     else
     {
         clRep = &vecget(server.clRepList, conid);
-        startTimer(&clRep->lastRecvTimer, 3000);
         con = clRep->con;
 
         stream_init(&bs, data, len);
         bs.datalen = len;
 
-        netcon_process(con, &bs);
+        if(netcon_process(con, &bs) < 0)
+            return;
+
+        startTimer(&clRep->lastRecvTimer, 3000);
 
         if(con->recvState != NETCON_FRAGMENT)
         {
@@ -414,7 +447,8 @@ void serv_writeInputACK(int conID, serv_clrep_t *clRep, bitstream_t *writeStream
 
     inputCommandList = &clRep->inputCommandList;
 
-    printf("writing acked input %d \n", inputCommandList->start - 1);
+    if(shTestLogs)
+        printf("writing acked input %d \n", inputCommandList->start - 1);
     stream_writeByte(writeStream, SERVCMD_INPUTACK);
     stream_writeInt(writeStream, inputCommandList->start - 1);
 }
@@ -486,7 +520,7 @@ void serv_sendPacketAll()
 
     ent_settleStateDiff();
 
-    startTimer(&server.sendTimer, 100);
+    startTimer(&server.sendTimer, 50);
 }
 
 /********************SERVER RUN COMMAND********************/

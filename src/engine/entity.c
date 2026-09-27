@@ -203,6 +203,27 @@ VectorEntity* addSprite(int typeID, SaveDataHandler *saveDataReader, bool isServ
     return vecEnt;
 }
 
+void ent_remove(int entID)
+{
+    if(entID < 0 || entID >= VECTOR_ENTITY_COUNT)
+        return;
+
+    VectorEntity *vecEnt = &vectorEntityList[entID];
+    if(!vecEnt->active)
+        return;
+
+    if(vecEnt->typeID >= 0 && vecEnt->typeID < spriteFactoryCount) {
+        SpriteFactory *factory = &spriteFactoryList[vecEnt->typeID];
+        if(factory->cleanup != NULL)
+            factory->cleanup(vecEnt);
+    }
+
+    vecEnt->active = false;
+    NetEntity *netEnt = &netEntityList[entID];
+    netEnt->isNew = false;
+    netEnt->isRemoved = true;
+}
+
 /********************RAY********************/
 
 
@@ -274,11 +295,11 @@ qbool ent_handleRayWeaponShoot(rayWeaponHandle_t *weaponHandle, int entID, weapo
     angle = deg2rad(angle);
 
     vec3setang2(dir, angle);
-    vec3mult(dir, 50);
+    vec3mult(dir, 500);
 
     ent_emitRay(&weaponHandle->rayHandleList, entID, pos, dir);
 
-    // weaponOnHand->ammoCount -= 1;
+    weaponOnHand->ammoCount -= 1;
 
     return qtrue;
 }
@@ -286,6 +307,7 @@ qbool ent_handleRayWeaponShoot(rayWeaponHandle_t *weaponHandle, int entID, weapo
 void ent_resetRayWeapon(rayWeaponHandle_t *weaponHandle)
 {
     ent_resetRayList(&weaponHandle->rayHandleList);
+    ent_resetHitEntityList(&weaponHandle->rayHandleList);
 }
 
 void ent_initVectorRayWeapon()
@@ -295,7 +317,7 @@ void ent_initVectorRayWeapon()
     weaponType.maxAmmoCount = 10;
     weaponType.accuracy = 0;
     weaponType.currentShootDelay = 0;
-    weaponType.nextShootDelay = 100;
+    weaponType.nextShootDelay = 160;
     weaponType.onHandCapacity = 10;
     weaponType.totalCapacity = 10;
 
@@ -375,8 +397,22 @@ void ent_handleClientLeave(serv_clrep_t *newClRep) {
 }
 
 void ent_removeSyncedEntFromClient(int entID, serv_clrep_t *newClRep, int entType) {
-    // Stub: remove synced entity from client
-    printf("ent_removeSyncedEntFromClient: stub called for entity %d\n", entID);
+    if(entID < 0 || newClRep == NULL || newClRep->con == NULL)
+        return;
+
+    worldSnapshot_t *worldSnapshot = &vecget(worldSnapshotList.list, newClRep->worldSnapshotID);
+    for(int i = 0; i < vecsize(worldSnapshot->recordList); i++) {
+        entityRecord_t *record = &vecget(worldSnapshot->recordList, i);
+        if(record->active && record->entID == entID) {
+            record->active = false;
+            break;
+        }
+    }
+
+    bitstream_t removeStream;
+    streamQuick_begin(&worldSnapshot->removeEntRecord, newClRep->con, &removeStream);
+    stream_writeInt(&removeStream, entID);
+    streamQuick_end(&worldSnapshot->removeEntRecord, newClRep->con, &removeStream);
 }
 
 void ent_removeSyncedEntState(int entID, int entType) {

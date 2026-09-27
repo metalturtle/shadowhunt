@@ -1,6 +1,7 @@
 #include "../basic/basic.h"
 #include "engine.h"
 #include "entity.h"
+#include "stealth.h"
 
 i2imap_t *translateIDMap;
 
@@ -291,15 +292,28 @@ void addEntityRecord(serv_clrep_t *newClRep, VectorEntity *vecEnt) {
     worldSnapshot_t *worldSnapshot = &vecget(worldSnapshotList.list, newClRep->worldSnapshotID);
     bitstream_t newWriteBs;
     NetEntity *netEnt = &netEntityList[vecEnt->entID];
-    printf("writing new netEnt \n");
+
+    /* A client that joins while another entity is still flagged new would
+     * otherwise record it twice; duplicates overflow the client's bounds. */
+    for(int i = 0; i < vecsize(worldSnapshot->recordList); i++) {
+        entityRecord_t *existing = &vecget(worldSnapshot->recordList, i);
+        if(existing->active && existing->entID == vecEnt->entID)
+            return;
+    }
+
+    if(shTestLogs)
+        printf("writing new netEnt \n");
     int entRecID = vecsize(worldSnapshot->recordList);
     vecpushempty(worldSnapshot->recordList, entityRecord_t);
 
     // bm_setBitVal(clEntList->bitmap.arr, entRecID, 1);
     entityRecord_t *entRecord = &vecget(worldSnapshot->recordList, entRecID);
     entRecord->entID = vecEnt->entID;
+    entRecord->active = true;
 
-    byte *stateChangeBm = (byte *) zidmalloc(GENERALZONE, (int)CEIL(((float)netEnt->esDef.listSize)/8.0));
+    /* The legacy recent-state tracker still owns acknowledgement bookkeeping.
+     * Keep a real byte even while the release path sends bounded full snapshots. */
+    byte *stateChangeBm = (byte *) zidmalloc(GENERALZONE, 1);
     streamRecent_init(&entRecord->recentRecord, 8, NULL, NULL, stateChangeBm);    
     // set the entity ID
     streamQuick_begin(&worldSnapshot->newEntRecord, newClRep->con, &newWriteBs);
@@ -322,6 +336,12 @@ void ent_readNewEntList(
     
     // get the number of records that were sent
     int recordCount = streamQuick_readCount(&worldSnapshot->newEntRecord, bs);
+
+    if(recordCount < 0 || recordCount > VECTOR_ENTITY_COUNT ||
+       !stream_canRead(bs, (unsigned int)recordCount * 65U)) {
+        bs->overflowed = qtrue;
+        return;
+    }
 
     for(int i = 0; i < recordCount; i++)
     {
@@ -375,57 +395,39 @@ void ent_readEntStateList(bitstream_t *bs)
     byte stateBm[32];
 
 
+    MATCH_STATE = (int)stream_readInt(bs);
+    stealth_readSnapshotHeader(bs);
+    if(stream_overflowed(bs))
+        return;
+
     //read the count of entities that are sent
     int entLen = stream_readInt(bs);
 
-    // if entity count is equal to or less than zero, then return
     if(entLen <= 0)
         return;
 
+    if(entLen > VECTOR_ENTITY_COUNT ||
+       !stream_canRead(bs, (unsigned int)entLen * (1U + SH_ENTITY_SNAPSHOT_INTS) * 32U)) {
+        bs->overflowed = qtrue;
+        return;
+    }
 
-    // read the state of the entities
     for(int j = 0; j < entLen; j++)
     {
-        // read the server entity id
         int remoteEntID = stream_readInt(bs);
-
-        // translate the server entity id to the client entity id
         int translatedID = i2imap_get(translateIDMap, remoteEntID);
 
-        //read the states that were sent
-        // streamRecent_readStateBits(entSerializer->stateLen, bs, stateBm);
+        if(translatedID < 0 || translatedID >= VECTOR_ENTITY_COUNT ||
+           !vectorEntityList[translatedID].active) {
+            /* Consume the fixed snapshot even if its create record was lost. */
+            stealth_skipEntity(bs);
+            continue;
+        }
 
-        // call readState function that reads the states sent based
-        // on the state flags
-        // entSerializer->readState(translatedID, bs, stateBm);
-
-        // printf("translatedID %d %d\n", translatedID, remoteEntID);
-        VectorEntity *vecEnt = &vectorEntityList[translatedID];
-        NetEntity *netEnt = &netEntityList[translatedID];
-
-        // setupNetworkEntity(&netEnt->netObj, vecEnt, bs, TRACK_READ_DIFF);
-
-        setupESDef(&netEnt->esDef, ESDEF_BSREADSTATE, NULL);
-        spriteFactoryList[vecEnt->typeID].processState(vecEnt, &netEnt->esDef);
-
-    
-        // if(netEnt->isPuppet) {
-        //     spriteFactoryList[vecEnt->typeID].puppetSerializer(vecEnt, &netEnt->netObj);
-        // }
-        // else {
-        //     spriteFactoryList[vecEnt->typeID].serializer(vecEnt, &netEnt->netObj);
-        // }
-        // setupNetworkEntity(&netEnt->netObj, vecEnt, bs, READ);
-        // // setNetworkEntityChanged(&netEnt->netObj, stateBm, entSerializer->stateLen);
-        // // handleNetworkEntity(&vecEnt->netObj, vecEnt);
-        // if(netEnt->isPuppet) {
-        //     spriteFactoryList[vecEnt->typeID].puppetSerializer(vecEnt, &netEnt->netObj);
-        // }
-        // else {
-        //     spriteFactoryList[vecEnt->typeID].serializer(vecEnt, &netEnt->netObj);
-        // }
-        
+        stealth_readEntity(bs, &vectorEntityList[translatedID]);
     }
+
+    stealth_finishSnapshot();
 }
 
 // read list of new entities that should be created
@@ -441,6 +443,12 @@ void ent_readRemoveEntList(
     
     // get the number of records that were sent
     int recordCount = streamQuick_readCount(&worldSnapshot->removeEntRecord, bs);
+
+    if(recordCount < 0 || recordCount > VECTOR_ENTITY_COUNT ||
+       !stream_canRead(bs, (unsigned int)recordCount * 32U)) {
+        bs->overflowed = qtrue;
+        return;
+    }
 
 
     for(int i = 0; i < recordCount; i++)
@@ -459,8 +467,10 @@ void ent_readRemoveEntList(
 
 
         VectorEntity *vecEnt = getVectorEntity(clientEntID);
+        printf("removing remote entity %d\n", remoteEntID);
         
         spriteFactoryList[vecEnt->typeID].cleanup(vecEnt);
+        vecEnt->active = false;
 
         // add mapping for the server entity id to the client entity id
         i2imap_remove(translateIDMap, remoteEntID);
@@ -471,7 +481,7 @@ void ent_readRemoveEntList(
 void ent_readSerializerList(serv_clrep_t *newClRep, bitstream_t *bs)
 {
     byte cmd;
-    while((cmd = stream_readByte(bs)) != ENTCMD_END)
+    while(stream_canRead(bs, 8) && (cmd = stream_readByte(bs)) != ENTCMD_END)
     {
         // printf("checking cmd %d \n", cmd);
         switch(cmd)
@@ -486,8 +496,12 @@ void ent_readSerializerList(serv_clrep_t *newClRep, bitstream_t *bs)
                 ent_readEntStateList(bs);
                 break;
             default:
-                com_error(ERR_FATAL, "Error: wrong ent command received %d %d %d\n", cmd, ENTCMD_STATE, ENTCMD_NEW);
+                bs->overflowed = qtrue;
+                return;
         }
+
+        if(stream_overflowed(bs))
+            return;
     }
 }
 
@@ -622,6 +636,8 @@ void ent_writeStateList(serv_clrep_t *newClRep, bitstream_t *bs)
     stream_writeByte(bs, ENTCMD_STATE);
 
 
+    stream_writeInt(bs, MATCH_STATE);
+    stealth_writeSnapshotHeader(bs);
     stream_writeInt(bs, entLen);
 
     //go through the list of client entity records
@@ -645,27 +661,8 @@ void ent_writeStateList(serv_clrep_t *newClRep, bitstream_t *bs)
         stream_writeInt(bs, entRecord->entID);
 
 
-        // save the state bits
-        // streamRecent_setStateBits(&entRecord->recentRecord, entState.state);
-
-        
-
-        // write the entity state to the bitstream
-        streamRecent_writeStateBits(&entRecord->recentRecord, bs, newClRep->con, stateBm);
-
-
-        // write the entity state for the state bits that are set
-        // entSerializer->writeState(entRecord->entID, bs, stateBm, conID);
-
         VectorEntity *vecEnt = &vectorEntityList[entRecord->entID];
-        NetEntity *netEnt = &netEntityList[entRecord->entID];
-
-        for(int i = 0; i < netEnt->esDef.listSize; i++) {
-            entRecord->esDiff.shouldSend[i] = bm_getBitVal(stateBm, i);
-        }
-
-        setupESDef(&netEnt->esDef, ESDEF_BSWRITESTATE, &entRecord->esDiff);
-        spriteFactoryList[vecEnt->typeID].processState(vecEnt, &netEnt->esDef);
+        stealth_writeEntity(bs, vecEnt, newClRep->conID);
 
         // setupNetworkEntity(&netEnt->netObj, vecEnt, bs, TRACK_WRITE_DIFF);
         // setNetworkEntityChanged(&netEnt->netObj, stateBm);

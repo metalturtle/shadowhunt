@@ -581,6 +581,7 @@ s2imap_t *s2imap_create(int zoneid)
 {
     s2imap_t *smap;
     smap = (s2imap_t*)zidmalloc(zoneid,sizeof(s2imap_t));
+    smap->zoneid = zoneid;
     smap->capacity = HASHS2I_LISTSIZE;
     smap->length = 0;
     smap->list = (s2inode_t*)zidmalloc(zoneid, sizeof(s2inode_t)*smap->capacity);

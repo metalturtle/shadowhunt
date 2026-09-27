@@ -1,0 +1,3 @@
+[submodule "vendored/Chipmunk2D"]
+	path = vendored/Chipmunk2D
+	url = https://github.com/slembcke/Chipmunk2D.git

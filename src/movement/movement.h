@@ -1,3 +1,4 @@
+#include "../core/stealth_rules.h"
 // #include "../basic/world_def.h"
 // #include "../engine/entity.h"
 
@@ -6,10 +7,25 @@ typedef struct worldRect_st
     float rect[4];
 } worldRect_t;
 
+typedef struct worldPoint_st
+{
+    float x, y;
+} worldPoint_t;
+
 typedef struct world_st
 {
     worldRect_t *worldWallArray;
     int worldWallSize;
+
+    /* Stealth layout: static lamps, role spawns and power pellet sites. */
+    sh_light_t lights[SH_MAX_LIGHTS];
+    int lightCount;
+    worldPoint_t hunterSpawns[SH_MAX_SPAWNS];
+    int hunterSpawnCount;
+    worldPoint_t hiderSpawns[SH_MAX_SPAWNS];
+    int hiderSpawnCount;
+    worldPoint_t pellets[SH_MAX_PELLETS];
+    int pelletCount;
 
 } world_t;
 

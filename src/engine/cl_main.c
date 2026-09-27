@@ -1,8 +1,11 @@
 #include "engine.h"
 #include "../basic/world_def.h"
 #include "entity.h"
+#include "stealth.h"
 
 static byte writeBuffer[MAX_MSGLEN];
+
+static void cl_updateAim(void);
 
 /********************CLIENT FRAME RUN********************/
 
@@ -23,6 +26,7 @@ void cl_addInputCmd()
         return;
     }
 
+    cl_updateAim();
     inpCmd_addFromInput(inputCommandList, client.clRep.con->outgoingSequence);
 
     inputCommand_t *inpCmd = inpCmd_getLast(inputCommandList);
@@ -40,9 +44,46 @@ void cl_keyEvent(int key)
 }
 
 
+static float rawMouseX = 1.0f, rawMouseY = 0.5f;
+
 void cl_mouseEvent(float x, float y)
 {
-    inpCmd_moveMouse(x, y);
+    rawMouseX = x;
+    rawMouseY = y;
+}
+
+/* Cursor position normalized to the window, for the camera look-ahead. */
+void cl_getMouse(float *x, float *y)
+{
+    *x = rawMouseX;
+    *y = rawMouseY;
+}
+
+/* Aim from the local player's on-screen position toward the cursor, then
+ * encode that direction on a circle around the viewport center, which is
+ * what the server turns back into an angle. */
+static void cl_updateAim(void)
+{
+    /* Test harness hook: aim at a fixed world angle in degrees. */
+    const char *testAim = getenv("SHADOWHUNT_TEST_AIM");
+    if(testAim != NULL && testAim[0] != '\0') {
+        float radians = (float)deg2rad(atof(testAim));
+        inpCmd_moveMouse(0.5f + 0.45f * cosf(radians), 0.5f + 0.45f * sinf(radians));
+        return;
+    }
+
+    VectorEntity *local = stealth_localPlayer();
+    float originX = 0.5f, originY = 0.5f;
+    if(local != NULL && cameraRect.w > 0 && cameraRect.h > 0) {
+        originX = (local->pos.x - cameraRect.x) / cameraRect.w;
+        originY = (local->pos.y - cameraRect.y) / cameraRect.h;
+    }
+    float dx = (rawMouseX - originX) * engineParameters.windowWidth;
+    float dy = (rawMouseY - originY) * engineParameters.windowHeight;
+    float length = sqrtf(dx * dx + dy * dy);
+    if(length < 1.0f)
+        return;
+    inpCmd_moveMouse(0.5f + 0.45f * dx / length, 0.5f + 0.45f * dy / length);
 }
 
 
@@ -65,7 +106,7 @@ void cl_processSysCmd(bitstream_t *readStream)
     {
         printf("client setting state to run\n");
         client.clRep.clState = SYS_RUN;
-        startTimer(&client.clRep.sendTimer, 100);
+        startTimer(&client.clRep.sendTimer, 50);
 
         inputCommandList_t *inpCmdList = &client.clRep.inputCommandList;
         inpCmd_init(inpCmdList);
@@ -89,7 +130,8 @@ void cl_ackInput(bitstream_t *readStream)
 
     int ackRecordID = stream_readInt(readStream);
 
-    printf("acked record ID %d \n", ackRecordID);
+    if(shTestLogs)
+        printf("acked record ID %d \n", ackRecordID);
 
 
     // if(ackRecordID <= inputCommandList->lastRecordID)
@@ -125,13 +167,6 @@ void cl_ackInput(bitstream_t *readStream)
         // }
 
 
-        if(lastInp->recordID > 10000)
-            com_error(ERR_FATAL, "error: incorect input recordID found\n");
-    }
-    else {
-        inpCmd = inpCmd_get(inputCommandList, 0);
-        // printf("couldn't find record ID %d %d %d\n", ackRecordID, inputCommandList->lastRecordID, inpCmd->recordID);
-        return;
     }
 
     for(int i = 0; i < remLen; i++)
@@ -161,12 +196,11 @@ void cl_readEntities(bitstream_t *readStream)
 
 void cl_readServerCmd(bitstream_t *readStream)
 {
-    byte cmd;
-    int count = 1;
-
+    byte cmd = 0;
     cl_acknowledge();
 
-    while ((cmd = stream_readByte(readStream)) != SERVCMD_END)
+    while (stream_canRead(readStream, 8) &&
+           (cmd = stream_readByte(readStream)) != SERVCMD_END)
     {
         if(cmd == SERVCMD_SYS)
         {
@@ -181,19 +215,15 @@ void cl_readServerCmd(bitstream_t *readStream)
             cl_ackInput(readStream);
         }
         else {
-            break;
+            return;
         }
+
+        if(stream_overflowed(readStream))
+            return;
     }
 
-
-    if(cmd != SERVCMD_END)
-    {
-        for(int i = readStream->curbyte - 5; i < readStream->curbyte + 2; i++)
-        {
-            printbit(readStream->buf[i]); printf("\n");
-        }
-        com_error(ERR_FATAL, "error: last cmd is not equal to NETCMD_END\n");
-    }
+    if(stream_overflowed(readStream) || cmd != SERVCMD_END)
+        return;
 }
 
 
@@ -210,7 +240,8 @@ void cl_packetEvent(netaddr_t *fromAddress, byte *data, int len)
     stream_init(&readStream, data, len);
     readStream.datalen = len;
 
-    netcon_process(client.clRep.con, &readStream);
+    if(netcon_process(client.clRep.con, &readStream) < 0)
+        return;
 
     if(client.clRep.con->recvState != NETCON_FRAGMENT)
     {
@@ -250,7 +281,7 @@ void cl_writeSysCmd(bitstream_t *writeStream)
     stream_writeByte(writeStream, SYS_CONNECT);
     
     printf("send connect packet\n");
-    startTimer(&client.clRep.sendTimer, 100);
+    startTimer(&client.clRep.sendTimer, 50);
     client.conAttempts++;
 }
 
@@ -358,7 +389,7 @@ void cl_frame()
 
     if(checkTimer(&client.clRep.sendTimer))
     {
-        startTimer(&client.clRep.sendTimer, 100);
+        startTimer(&client.clRep.sendTimer, 50);
     }
 }
 
@@ -369,7 +400,16 @@ void cl_init()
     client.clRep.con = (netcon_t *) zidmalloc(GENERALZONE, sizeof(netcon_t));
 
     netcon_setup(client.clRep.con);
-    netAddrSet(&client.clRep.con->remoteAddress, 127, 0, 0, 1, 8000);
+    int ip1, ip2, ip3, ip4;
+    const char *serverHost = cvar_getString("serverHost");
+    int serverPort = cvar_getInt("serverPort");
+    if(sscanf(serverHost, "%d.%d.%d.%d", &ip1, &ip2, &ip3, &ip4) != 4 ||
+       ip1 < 0 || ip1 > 255 || ip2 < 0 || ip2 > 255 ||
+       ip3 < 0 || ip3 > 255 || ip4 < 0 || ip4 > 255 ||
+       serverPort <= 0 || serverPort > 65535) {
+        com_error(ERR_FATAL, "Invalid server address %s:%d\n", serverHost, serverPort);
+    }
+    netAddrSet(&client.clRep.con->remoteAddress, ip1, ip2, ip3, ip4, serverPort);
 
     // ent_initRecordList(&client.clRep.entStateRecordList);
 
@@ -402,7 +442,7 @@ void cl_update() {
 
     if(checkTimer(&client.clRep.sendTimer))
     {
-        startTimer(&client.clRep.sendTimer, 100);
+        startTimer(&client.clRep.sendTimer, 50);
     }
 }
 
