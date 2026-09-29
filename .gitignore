@@ -1,7 +1,7 @@
 # Build directories
-build/
-Debug/
-Release/
+/build/
+/Debug/
+/Release/
 
 # Compiled object files
 *.o
@@ -44,9 +44,9 @@ compile_commands.json
 # Zip archives (unless you need them)
 *.zip
 .cache
-res
+/res
 
 # Extra build trees and Python caches
-build*/
+/build*/
 __pycache__/
 .play-logs/
