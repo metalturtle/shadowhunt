@@ -143,6 +143,11 @@ int net_getPacket(netaddr_t *fromaddr, bitstream_t *msg)
     return ret;
 }
 
+qbool net_isReady(void)
+{
+    return qtrue;
+}
+
 void net_sleep(int msec)
 {
     struct timeval timeout;

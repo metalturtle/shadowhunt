@@ -76,6 +76,35 @@ static void loadStealthLayout(cJSON *levelJSON)
            world.pelletCount);
 }
 
+/* The level file in use: SHADOWHUNT_LEVEL swaps in a gameplay fixture.
+ * The caller owns the returned string (SDL_free). */
+char *world_levelPath(void)
+{
+    const char *levelOverride = getenv("SHADOWHUNT_LEVEL");
+    return findAssetPath(levelOverride != NULL && levelOverride[0] != '\0' ?
+                         levelOverride : "levels/level.json");
+}
+
+/* Hot reload: re-read lights, spawns and pellet sites. Walls need a restart
+ * because both prediction and the server's collision depend on them. */
+bool world_reloadLayout(void)
+{
+    char *levelPath = world_levelPath();
+    char *fbuf = getFileString(levelPath, TEMPORARYZONE);
+    SDL_free(levelPath);
+    if(fbuf == NULL)
+        return false;
+    cJSON *levelJSON = cJSON_Parse(fbuf);
+    zidfree(fbuf);
+    if(levelJSON == NULL) {
+        printf("hot reload: level JSON has a syntax error; keeping the old layout\n");
+        return false;
+    }
+    loadStealthLayout(levelJSON);
+    cJSON_Delete(levelJSON);
+    return true;
+}
+
 void world_setup()
 {
     char *fbuf;
@@ -89,10 +118,7 @@ void world_setup()
     int i;
     char *loadPath;
 
-    /* SHADOWHUNT_LEVEL swaps in a gameplay fixture (tests use small arenas). */
-    const char *levelOverride = getenv("SHADOWHUNT_LEVEL");
-    char *levelPath = findAssetPath(levelOverride != NULL && levelOverride[0] != '\0' ?
-                                    levelOverride : "levels/level.json");
+    char *levelPath = world_levelPath();
     fbuf = getFileString(levelPath, TEMPORARYZONE);
     SDL_free(levelPath);
     if(fbuf == NULL) {
@@ -103,7 +129,6 @@ void world_setup()
     worldJSON = cJSON_GetObjectItemCaseSensitive(levelJSON, "collision");
 
     arrSize = (int)cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(worldJSON, "size"));
-    printf("arrSize: %d \n", arrSize);
     world.worldWallArray = (worldRect_t *) zidmalloc(PERMANENTZONE, arrSize * sizeof(worldRect_t));
 
     wallListJSON = cJSON_GetObjectItemCaseSensitive(worldJSON, "object");
@@ -117,7 +142,6 @@ void world_setup()
         h = cJSON_GetNumberValue(cJSON_GetArrayItem(wallJSON, 3));
 
         rect2xywh(&world.worldWallArray[i].rect,x, y, w, h);
-        printf("x y w h %f %f %f %f \n", x, y, w, h);
         if(w != 0 && h != 0)
             createEdgeBoundary(x, y, w, h);
         i++;
@@ -126,7 +150,7 @@ void world_setup()
 
     loadStealthLayout(levelJSON);
 
-    cJSON_free(levelJSON);
+    cJSON_Delete(levelJSON);
     zidfree(fbuf);
 }
 
@@ -821,5 +845,5 @@ void handleMove(SDL_FPoint *pos, SDL_FPoint *dir)
 void createEdgeBoundary(float x, float y, float width, float height) {
     // Stub: Create physics boundary edge
     // Would typically create a static collision shape for world boundaries
-    printf("createEdgeBoundary: creating boundary at (%.2f, %.2f) size %.2fx%.2f\n", x, y, width, height);
+    (void)x; (void)y; (void)width; (void)height;
 }

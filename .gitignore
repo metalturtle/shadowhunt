@@ -13,21 +13,22 @@ Release/
 *.dylib
 *.dll
 
-# Executables
+# Executables (root only: a bare "main" also matched SDL's src/main/)
 *.exe
 *.out
-hello
-main
+/hello
+/main
 
-# CMake
+# CMake output from in-source configures. Build trees are ignored above; a
+# global *.cmake or Makefile rule would also drop vendored build scripts.
 CMakeCache.txt
 CMakeFiles/
-cmake_install.cmake
-CPackConfig.cmake
-CPackSourceConfig.cmake
-Makefile
+/cmake_install.cmake
+/CPackConfig.cmake
+/CPackSourceConfig.cmake
+/CTestTestfile.cmake
+/Makefile
 compile_commands.json
-*.cmake
 
 # macOS
 .DS_Store
@@ -46,5 +47,6 @@ compile_commands.json
 res
 
 # Extra build trees and Python caches
-build-*/
+build*/
 __pycache__/
+.play-logs/

@@ -92,6 +92,8 @@ extern int net_init(int port);
 extern int net_sendPacket(netaddr_t *a, bitstream_t *msg);
 extern int net_getPacket(netaddr_t *fromaddr, bitstream_t *msg);
 extern void net_sleep(int msec);
+/* False while a transport is still opening (the browser WebSocket). */
+extern qbool net_isReady(void);
 
 /********************CONNECTION LAYER********************/
 
@@ -210,6 +212,7 @@ extern unsigned long int getTimeMillis();
 extern void startTimer(endTimer_t *timer,unsigned int duration);
 extern qbool checkTimer(endTimer_t *timer);
 extern unsigned long int getTimeElapsed(endTimer_t *timer);
+extern qbool com_verbose(void);
 
 /********************PRINT********************/
 

@@ -13,7 +13,7 @@ void inpConfig_storeUsedKeys(char *usedKeys, int usedKeyLen)
 
     inpCmdConfig.keyBitLen = usedKeyLen;
     inpCmdConfig.keyByteLen = (byte) CEIL(((float) usedKeyLen)/8.0);
-    printf("calculating total key bytes %d \n", inpCmdConfig.keyByteLen);
+    if(com_verbose()) printf("calculating total key bytes %d \n", inpCmdConfig.keyByteLen);
 }
 
 

@@ -1,0 +1,9 @@
+{
+  "round_seconds": 150,
+  "release_ms": 1000,
+  "results_ms": 1500,
+  "lobby_ms": 500,
+  "power_ms": 4000,
+  "freeze_ms": 2000,
+  "pellet_respawn_ms": 20000
+}

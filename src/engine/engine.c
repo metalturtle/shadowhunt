@@ -399,6 +399,8 @@ void eng_init() {
 
     stealth_init();
 
+    bot_init();
+
 
     // initPickupList();
 
@@ -457,6 +459,7 @@ void eng_updateServer() {
     float elapsed = lastServerFrame == 0 ? 0 : (now - lastServerFrame) / 1000.0f;
     lastServerFrame = now;
 
+    stealth_pollHotReload();
     serv_checkTimeout();
     updateRoundState();
     stealth_refillMoveBudgets(elapsed);
@@ -515,6 +518,9 @@ void eng_updateClient() {
     // cl_frame();
     // cl_update();
 
+    stealth_pollHotReload();
+    bot_update();
+
     cl_addInputCmd();
 
     entSys_updateClient();
@@ -538,7 +544,7 @@ void eng_close() {
 
 void world_load(void) {
     // Stub: Load world/level data
-    printf("world_load: stub called - implement level loading here\n");
+    if(com_verbose()) printf("world_load: stub called - implement level loading here\n");
 }
 
 void eng_runFrame(void) {

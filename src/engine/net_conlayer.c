@@ -267,10 +267,15 @@ int netcon_process(netcon_t *con, bitstream_t *bs)
     if(stream_overflowed(bs))
         return netcon_reject("bitstream overflow");
 
-    if(ackSeq < con->windowStartSequence || ackSeq >= con->outgoingSequence)
+    if(ackSeq >= con->outgoingSequence)
     {
-        return netcon_reject("acknowledgement outside send window");
+        return netcon_reject("acknowledgement for a packet never sent");
     }
+
+    /* A delayed or reordered packet carries an older acknowledgement. Its
+     * payload (inputs, snapshots) is still good; only the ack is stale. */
+    if(ackSeq < con->windowStartSequence)
+        return retval;
 
     // printf("acked seq %d \n", ackSeq);
 

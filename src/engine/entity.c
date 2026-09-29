@@ -6,7 +6,7 @@
 s2imap_t *spriteNameMap;
 s2imap_t *animSpriteNameMap;
 
-i2imap_t *translateIDMap;
+extern i2imap_t *translateIDMap;   /* defined in netEntity.c */
 
 entityList_t entList;
 VectorEntity vectorEntityList[VECTOR_ENTITY_COUNT];
@@ -388,12 +388,12 @@ void ent_init()
 
 void ent_initEntList(void) {
     // Stub: entity list initialization placeholder
-    printf("ent_initEntList: stub called\n");
+    if(com_verbose()) printf("ent_initEntList: stub called\n");
 }
 
 void ent_handleClientLeave(serv_clrep_t *newClRep) {
     // Stub: handle client disconnection
-    printf("ent_handleClientLeave: stub called for client %d\n", newClRep->conID);
+    if(com_verbose()) printf("ent_handleClientLeave: stub called for client %d\n", newClRep->conID);
 }
 
 void ent_removeSyncedEntFromClient(int entID, serv_clrep_t *newClRep, int entType) {
@@ -417,7 +417,7 @@ void ent_removeSyncedEntFromClient(int entID, serv_clrep_t *newClRep, int entTyp
 
 void ent_removeSyncedEntState(int entID, int entType) {
     // Stub: remove synced entity state
-    printf("ent_removeSyncedEntState: stub called for entity %d\n", entID);
+    if(com_verbose()) printf("ent_removeSyncedEntState: stub called for entity %d\n", entID);
 }
 
 void ent_settleStateDiff(void) {

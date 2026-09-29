@@ -39,6 +39,8 @@ typedef struct world_st
 
 // extern void initPhysics();
 extern world_t world;
+extern char *world_levelPath(void);
+extern bool world_reloadLayout(void);
 // extern entityMoveList_t newMoveList;
 // extern moveList_t moveList;
 

@@ -1,6 +1,8 @@
 #include "stealth.h"
 #include "../basic/world_def.h"
 #include "../movement/movement.h"
+#include "../basic/cJSON.h"
+#include <sys/stat.h>
 
 /* Hunters versus hiders.
  *
@@ -10,6 +12,7 @@
  * drawn by the client. */
 
 StealthGame shGame;
+sh_tuning_t shTuning;
 PredictionCheck shPrediction;
 bool shTestLogs;
 
@@ -22,11 +25,169 @@ static bool isServerProcess(void)
 
 /********************SHARED********************/
 
+/********************TUNING AND HOT RELOAD********************/
+
+extern char *findAssetPath(const char *relative);
+
+void stealth_setDefaultTuning(sh_tuning_t *tuning)
+{
+    tuning->roundMs = 150000;
+    tuning->releaseMs = 4000;
+    tuning->resultsMs = 5000;
+    tuning->lobbyMs = 3000;
+    tuning->powerMs = 7000;
+    tuning->freezeMs = 5000;
+    tuning->pelletRespawnMs = 20000;
+    tuning->hunterSpeed = 58.0f;
+    tuning->hiderSpeed = 62.0f;
+    tuning->poweredSpeed = 80.0f;
+    tuning->lanternRadius = 30.0f;
+    tuning->pickupReach = 9.0f;
+    tuning->tagReach = 11.0f;
+    tuning->shotDamage = 34;
+    tuning->hunterAmmo = 90;
+    tuning->shotIntervalMs = 160;
+    tuning->maxMoveBudget = 0.25f;
+}
+
+static char *tuningPath(void)
+{
+    const char *override = getenv("SHADOWHUNT_TUNING");
+    return findAssetPath(override != NULL && override[0] != '\0' ?
+                         override : "levels/config/tuning.json");
+}
+
+static void readNumber(cJSON *json, const char *key, float *out, float minimum, float maximum)
+{
+    cJSON *item = cJSON_GetObjectItemCaseSensitive(json, key);
+    if(item == NULL)
+        return;
+    if(!cJSON_IsNumber(item)) {
+        printf("tuning: %s must be a number; keeping %g\n", key, *out);
+        return;
+    }
+    float value = (float)cJSON_GetNumberValue(item);
+    if(value < minimum || value > maximum) {
+        printf("tuning: %s=%g outside %g..%g; keeping %g\n", key, value, minimum, maximum, *out);
+        return;
+    }
+    *out = value;
+}
+
+static void readInteger(cJSON *json, const char *key, int *out, int minimum, int maximum)
+{
+    float value = (float)*out;
+    readNumber(json, key, &value, (float)minimum, (float)maximum);
+    *out = (int)value;
+}
+
+static void applyTuning(void)
+{
+    rayWeaponHandle.weaponType.nextShootDelay = shTuning.shotIntervalMs;
+}
+
+bool stealth_loadTuning(const char *path)
+{
+    char *text = getFileString(path, TEMPORARYZONE);
+    if(text == NULL)
+        return false;
+    cJSON *json = cJSON_Parse(text);
+    zidfree(text);
+    if(json == NULL || !cJSON_IsObject(json)) {
+        printf("tuning: %s is not valid JSON; keeping previous values\n", path);
+        cJSON_Delete(json);
+        return false;
+    }
+
+    /* Validate into a copy so one bad value never leaves half a load. */
+    sh_tuning_t next = shTuning;
+    float roundSeconds = next.roundMs / 1000.0f;
+    readNumber(json, "round_seconds", &roundSeconds, 1, 3600);
+    next.roundMs = (int)(roundSeconds * 1000.0f);
+    readInteger(json, "release_ms", &next.releaseMs, 0, 60000);
+    readInteger(json, "results_ms", &next.resultsMs, 0, 60000);
+    readInteger(json, "lobby_ms", &next.lobbyMs, 0, 60000);
+    readInteger(json, "power_ms", &next.powerMs, 0, 60000);
+    readInteger(json, "freeze_ms", &next.freezeMs, 0, 60000);
+    readInteger(json, "pellet_respawn_ms", &next.pelletRespawnMs, 0, 600000);
+    readNumber(json, "hunter_speed", &next.hunterSpeed, 1, 400);
+    readNumber(json, "hider_speed", &next.hiderSpeed, 1, 400);
+    readNumber(json, "powered_speed", &next.poweredSpeed, 1, 400);
+    readNumber(json, "lantern_radius", &next.lanternRadius, 0, 200);
+    readNumber(json, "pickup_reach", &next.pickupReach, 1, 100);
+    readNumber(json, "tag_reach", &next.tagReach, 1, 100);
+    readInteger(json, "shot_damage", &next.shotDamage, 1, 1000);
+    readInteger(json, "hunter_ammo", &next.hunterAmmo, 0, 10000);
+    readInteger(json, "shot_interval_ms", &next.shotIntervalMs, 20, 5000);
+    cJSON_Delete(json);
+
+    shTuning = next;
+    applyTuning();
+    return true;
+}
+
+typedef struct {
+    time_t mtime;
+    long size;
+} fileStamp_t;
+
+static bool fileChanged(const char *path, fileStamp_t *stamp)
+{
+    struct stat info;
+    if(path == NULL || stat(path, &info) != 0)
+        return false;
+    bool changed = info.st_mtime != stamp->mtime || (long)info.st_size != stamp->size;
+    stamp->mtime = info.st_mtime;
+    stamp->size = (long)info.st_size;
+    return changed;
+}
+
+/* Poll twice a second: cheap, and editors that save by rename still work. */
+void stealth_pollHotReload(void)
+{
+    static fileStamp_t tuningStamp, levelStamp;
+    static unsigned long nextPoll;
+    static bool primed;
+    unsigned long now = getTimeMillis();
+    if(getenv("SHADOWHUNT_NO_HOT_RELOAD") != NULL || now < nextPoll)
+        return;
+    nextPoll = now + 500;
+
+    char *tuningFile = tuningPath();
+    char *levelFile = world_levelPath();
+    bool tuningChanged = fileChanged(tuningFile, &tuningStamp);
+    bool levelChanged = fileChanged(levelFile, &levelStamp);
+
+    /* Clients receive tuning from the server, so only the server reloads it. */
+    if(primed && tuningChanged && cvar_getInt("isServer") && stealth_loadTuning(tuningFile))
+        printf("hot reload: tuning from %s\n", tuningFile);
+    if(primed && levelChanged && world_reloadLayout()) {
+        /* Newly added pellet sites start active; existing ones keep state. */
+        for(int i = 0; i < world.pelletCount; i++) {
+            if(shGame.pelletRespawnAt[i] == 0)
+                shGame.pelletActive[i] = true;
+        }
+        printf("hot reload: level layout from %s\n", levelFile);
+    }
+    primed = true;
+    SDL_free(tuningFile);
+    SDL_free(levelFile);
+}
+
 void stealth_init(void)
 {
     memset(&shGame, 0, sizeof(shGame));
     shGame.lastSeenShotID = -1;
     shTestLogs = getenv("SHADOWHUNT_TEST_LOGS") != NULL;
+
+    stealth_setDefaultTuning(&shTuning);
+    char *path = tuningPath();
+    if(stealth_loadTuning(path))
+        printf("tuning: loaded %s\n", path);
+    else
+        printf("tuning: %s not found, using defaults\n", path);
+    SDL_free(path);
+    applyTuning();
 }
 
 PlayerData *stealth_player(VectorEntity *vecEnt)
@@ -424,6 +585,13 @@ void stealth_writeSnapshotHeader(bitstream_t *bs)
     writeInt(bs, shGame.hidersTotal);
     writeInt(bs, shGame.huntersTotal);
     writeInt(bs, pelletMask);
+    /* Tuning the client needs for prediction and presentation. */
+    writeInt(bs, (int)(shTuning.hunterSpeed * 100));
+    writeInt(bs, (int)(shTuning.hiderSpeed * 100));
+    writeInt(bs, (int)(shTuning.poweredSpeed * 100));
+    writeInt(bs, (int)(shTuning.lanternRadius * 100));
+    writeInt(bs, shTuning.powerMs);
+    writeInt(bs, shTuning.freezeMs);
 
     int shotCount = 0;
     for(int i = 0; i < SH_MAX_SHOTS; i++) {
@@ -500,7 +668,7 @@ void stealth_readSnapshotHeader(bitstream_t *bs)
 {
     unsigned long now = getTimeMillis();
 
-    if(!stream_canRead(bs, 9U * 32U)) {
+    if(!stream_canRead(bs, 15U * 32U)) {
         bs->overflowed = qtrue;
         return;
     }
@@ -515,6 +683,21 @@ void stealth_readSnapshotHeader(bitstream_t *bs)
     int pelletMask = readInt(bs);
     for(int i = 0; i < SH_MAX_PELLETS; i++)
         shGame.pelletActive[i] = i < 31 && (pelletMask & (1 << i));
+    shTuning.hunterSpeed = readInt(bs) / 100.0f;
+    shTuning.hiderSpeed = readInt(bs) / 100.0f;
+    shTuning.poweredSpeed = readInt(bs) / 100.0f;
+    shTuning.lanternRadius = readInt(bs) / 100.0f;
+    /* Read into locals: MAX() would evaluate readInt() twice. */
+    int powerMs = readInt(bs);
+    int freezeMs = readInt(bs);
+    shTuning.powerMs = MAX(1, powerMs);
+    shTuning.freezeMs = MAX(1, freezeMs);
+    static float reportedHunterSpeed = -1;
+    if(shTuning.hunterSpeed != reportedHunterSpeed) {
+        printf("tuning from server: hunter_speed=%g hider_speed=%g lantern=%g\n",
+               shTuning.hunterSpeed, shTuning.hiderSpeed, shTuning.lanternRadius);
+        reportedHunterSpeed = shTuning.hunterSpeed;
+    }
     shGame.lastUpdateAt = now;
 
     int shotCount = readInt(bs);

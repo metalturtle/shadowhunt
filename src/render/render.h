@@ -96,10 +96,11 @@ typedef struct animatedSpriteHandle_st
 
 // } graphicsHandle_t;
 
-textureImageHandle_t TexImgHandle;
-textureRegionHandle_t TexRegHandle;
-spriteHandle_t SpriteHandle;
-animatedSpriteHandle_t AnimSpriteHandle;
+/* Defined once in sdl_render.c. */
+extern textureImageHandle_t TexImgHandle;
+extern textureRegionHandle_t TexRegHandle;
+extern spriteHandle_t SpriteHandle;
+extern animatedSpriteHandle_t AnimSpriteHandle;
 // graphicsHandle_t GraphicsHandle;
 
 // extern camera_t worldCamera;

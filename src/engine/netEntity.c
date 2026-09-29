@@ -360,11 +360,13 @@ void ent_readNewEntList(
         
         // clientEntID = entSerializer->applyInitParam(clientEntID);
         // clientEntID = entSerializer->applyInitParam();
-        printf("client ent id %d %d %d\n", clientEntID, typeID, isOwner);
+        if(com_verbose()) printf("client ent id %d %d %d\n", clientEntID, typeID, isOwner);
         VectorEntity *vecEnt = addSprite(typeID, NULL, false, !isOwner);
         clientEntID = vecEnt->entID;
 
         printf("creating entity %d %d \n", remoteEntID, typeID);
+        if(isOwner)
+            printf("own entity %d\n", remoteEntID);
         // if(isOwner) {
         //     VectorEntity *vecEnt = addSprite(typeID, NULL, false);
         //     clientEntID = vecEnt->entID;
@@ -576,7 +578,7 @@ void ent_writeNewEntList(serv_clrep_t *newClRep, bitstream_t *bs)
     // write the stored list of new entities and their initialization params
     streamQuick_writePacket(&worldSnapshot->newEntRecord, bs, newClRep->con);
 
-    printf("write new entity list %d %d \n", ENTCMD_NEW, worldSnapshot->newEntRecord.recordCount);
+    if(com_verbose()) printf("write new entity list %d %d \n", ENTCMD_NEW, worldSnapshot->newEntRecord.recordCount);
 }
 
 // write list of new entities for sending to a client

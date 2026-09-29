@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shadowhunt</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #07040f; color: #f5f0ff;
+               font-family: ui-monospace, Menlo, monospace; overflow: hidden; }
+  #canvas { display: block; width: 100vw; height: 100vh; outline: none; }
+  #status { position: fixed; inset: 0; display: grid; place-items: center;
+            font-size: 1.4rem; letter-spacing: .12em; color: #ff40a0;
+            text-shadow: 0 0 12px #ff40a0; pointer-events: none; }
+  #status.hidden { display: none; }
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+<div id="status">LOADING SHADOWHUNT</div>
+<script>
+  var statusEl = document.getElementById('status');
+  var canvas = document.getElementById('canvas');
+  var Module = {
+    canvas: canvas,
+    // "<client port> <server host> <server port>": the relay picks the real
+    // route, but the client still needs a peer address to talk to.
+    arguments: ['8001', '127.0.0.1', '8000'],
+    print: function (text) { console.log(text); },
+    printErr: function (text) { console.warn(text); },
+    setStatus: function (text) {
+      statusEl.textContent = text ? text.toUpperCase() : '';
+      statusEl.classList.toggle('hidden', !text);
+    },
+    onRuntimeInitialized: function () { canvas.focus(); },
+  };
+  window.addEventListener('click', function () { canvas.focus(); });
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

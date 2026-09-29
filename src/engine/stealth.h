@@ -6,23 +6,51 @@
 #include "engine.h"
 #include "entity.h"
 
-/* Tuning. Distances are world units, times are milliseconds. */
-#define SH_ROUND_MS            150000
-#define SH_RELEASE_MS          4000
-#define SH_RESULTS_MS          5000
-#define SH_LOBBY_MS            3000
-#define SH_POWER_MS            7000
-#define SH_FREEZE_MS           5000
-#define SH_PELLET_RESPAWN_MS   20000
-#define SH_HUNTER_SPEED        58.0f
-#define SH_HIDER_SPEED         62.0f
-#define SH_POWERED_SPEED       80.0f
-#define SH_LANTERN_RADIUS      30.0f
-#define SH_PICKUP_REACH        9.0f
-#define SH_TAG_REACH           11.0f
-#define SH_SHOT_DAMAGE         34
-#define SH_HUNTER_AMMO         90
-#define SH_MAX_MOVE_BUDGET     0.25f
+/* Tuning. Distances are world units, times are milliseconds. Values come
+ * from levels/config/tuning.json (or SHADOWHUNT_TUNING) and hot reload while
+ * the game runs. The server replicates what clients need to predict. */
+typedef struct {
+    int roundMs;
+    int releaseMs;
+    int resultsMs;
+    int lobbyMs;
+    int powerMs;
+    int freezeMs;
+    int pelletRespawnMs;
+    float hunterSpeed;
+    float hiderSpeed;
+    float poweredSpeed;
+    float lanternRadius;
+    float pickupReach;
+    float tagReach;
+    int shotDamage;
+    int hunterAmmo;
+    int shotIntervalMs;
+    float maxMoveBudget;
+} sh_tuning_t;
+
+extern sh_tuning_t shTuning;
+
+#define SH_ROUND_MS            (shTuning.roundMs)
+#define SH_RELEASE_MS          (shTuning.releaseMs)
+#define SH_RESULTS_MS          (shTuning.resultsMs)
+#define SH_LOBBY_MS            (shTuning.lobbyMs)
+#define SH_POWER_MS            (shTuning.powerMs)
+#define SH_FREEZE_MS           (shTuning.freezeMs)
+#define SH_PELLET_RESPAWN_MS   (shTuning.pelletRespawnMs)
+#define SH_HUNTER_SPEED        (shTuning.hunterSpeed)
+#define SH_HIDER_SPEED         (shTuning.hiderSpeed)
+#define SH_POWERED_SPEED       (shTuning.poweredSpeed)
+#define SH_LANTERN_RADIUS      (shTuning.lanternRadius)
+#define SH_PICKUP_REACH        (shTuning.pickupReach)
+#define SH_TAG_REACH           (shTuning.tagReach)
+#define SH_SHOT_DAMAGE         (shTuning.shotDamage)
+#define SH_HUNTER_AMMO         (shTuning.hunterAmmo)
+#define SH_MAX_MOVE_BUDGET     (shTuning.maxMoveBudget)
+
+extern void stealth_setDefaultTuning(sh_tuning_t *tuning);
+extern bool stealth_loadTuning(const char *path);
+extern void stealth_pollHotReload(void);
 
 /* Per-entity snapshot flags. */
 #define SH_FLAG_EXPOSED    0x01
@@ -111,5 +139,11 @@ extern void stealth_finishSnapshot(void);
 extern void stealth_interpolate(VectorEntity *vecEnt, unsigned long renderTime);
 extern VectorEntity *stealth_localPlayer(void);
 extern int stealth_localRole(void);
+
+/* Development bots (bot.c). */
+extern void bot_init(void);
+extern void bot_update(void);
+extern bool bot_isActive(void);
+extern bool bot_aim(float *radians);
 
 #endif

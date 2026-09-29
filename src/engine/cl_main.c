@@ -64,6 +64,12 @@ void cl_getMouse(float *x, float *y)
  * what the server turns back into an angle. */
 static void cl_updateAim(void)
 {
+    float botRadians;
+    if(bot_aim(&botRadians)) {
+        inpCmd_moveMouse(0.5f + 0.45f * cosf(botRadians), 0.5f + 0.45f * sinf(botRadians));
+        return;
+    }
+
     /* Test harness hook: aim at a fixed world angle in degrees. */
     const char *testAim = getenv("SHADOWHUNT_TEST_AIM");
     if(testAim != NULL && testAim[0] != '\0') {
@@ -111,7 +117,7 @@ void cl_processSysCmd(bitstream_t *readStream)
         inputCommandList_t *inpCmdList = &client.clRep.inputCommandList;
         inpCmd_init(inpCmdList);
 
-        printf("setting sending timer \n");
+        if(com_verbose()) printf("setting sending timer \n");
     }
 }
 
@@ -280,7 +286,7 @@ void cl_writeSysCmd(bitstream_t *writeStream)
     stream_writeByte(writeStream, CLCMD_SYS);
     stream_writeByte(writeStream, SYS_CONNECT);
     
-    printf("send connect packet\n");
+    if(com_verbose()) printf("send connect packet\n");
     startTimer(&client.clRep.sendTimer, 50);
     client.conAttempts++;
 }
@@ -426,7 +432,7 @@ void cl_setup() {
 void cl_update() {
     // cl_addInputCmd();
 
-    if(client.clRep.clState == SYS_IDLE) {
+    if(client.clRep.clState == SYS_IDLE && net_isReady()) {
         client.clRep.clState = SYS_CONNECT;
     }
 

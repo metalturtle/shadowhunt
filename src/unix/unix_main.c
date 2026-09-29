@@ -236,8 +236,8 @@ void initEngineParameters(bool isServer) {
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 {
-    if(getenv("SHADOWHUNT_TEST_LOGS") != NULL)
-        setvbuf(stdout, NULL, _IOLBF, 0);
+    /* Line-buffer logs so tail -f (play.sh) and crash logs stay current. */
+    setvbuf(stdout, NULL, _IOLBF, 0);
 
     // SCREEN_WIDTH = 600;
     // SCREEN_HEIGHT = 600;
@@ -260,13 +260,17 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         isServer = 1;
     }
 
-    printf("isServer: %d %d\n", isServer, cvar_getInt("isServer"));
+    if(com_verbose()) printf("isServer: %d %d\n", isServer, cvar_getInt("isServer"));
 
     initEngineParameters(isServer);
 
     int success;
     if(cv_isServer->intval) {
-        success = net_init(8000);
+        /* SHADOWHUNT_SERVER_PORT lets tests run several servers at once. */
+        const char *serverPort = getenv("SHADOWHUNT_SERVER_PORT");
+        int listenPort = serverPort != NULL && atoi(serverPort) > 0 ? atoi(serverPort) : 8000;
+        printf("server listening on UDP port %d\n", listenPort);
+        success = net_init(listenPort);
     } else {
         success = net_init(port);
     }
@@ -278,7 +282,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     netcon_init();
 
-    printf("created world\n");
+    if(com_verbose()) printf("created world\n");
     // b2WorldDef worldDef = b2DefaultWorldDef();
     // worldDef.gravity = (b2Vec2){0.0f, 0.0f};  // Set gravity (pointing down)
     // worldId = b2CreateWorld(&worldDef);
@@ -407,29 +411,18 @@ float toFixedDecimals(float val, int dec) {
     return ival / pow(10, dec);
 }
 
-static void sleepBodyCallback(cpBody *body, void *data) {
-    // Sleeping and waking clears cached contacts
-    if(cpBodyGetType(body) == CP_BODY_TYPE_DYNAMIC) {
-        cpBodySleep(body);
-        cpBodyActivate(body);
-    }
-}
-
-void clearSpaceCache() {
-    // Chipmunk caches contacts in arbiters
-    // We need to clear them for determinism
-    cpSpaceEachBody(worldId, &sleepBodyCallback, NULL);
-}
-
 void engine_sleep() {
     const Uint64 nsPerFrame = 1000000000 / engineParameters.screenFPS;
     Uint64 end = SDL_GetTicksNS() - engineParameters.currentAbsoluteTick;
     engineParameters.absoluteDeltaTime = max((double) end / 1000000000.0, engineParameters.tickRate);
 
+#ifndef __EMSCRIPTEN__
+    /* The browser paces frames itself (requestAnimationFrame). */
     if(end < nsPerFrame) {
         Uint64 sleepTime = nsPerFrame - end;
         SDL_DelayNS(sleepTime);
     }
+#endif
     Uint64 currentTick = SDL_GetTicksNS();
     if(!engineParameters.isPaused) {
         // printf("checking diff %llu \n", currentTick - beginGameTick);
@@ -456,7 +449,13 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
         eng_runFrame();
 
-        renderSDL();
+        /* SHADOWHUNT_HEADLESS skips drawing for bots and test clients: the
+         * simulation, prediction and networking still run every frame. */
+        static int headless = -1;
+        if(headless < 0)
+            headless = getenv("SHADOWHUNT_HEADLESS") != NULL;
+        if(!headless)
+            renderSDL();
 
         eng_afterRender();
     }

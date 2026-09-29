@@ -29,6 +29,10 @@
 
 // extern camera_t worldCamera;
 SDL_FRect cameraRect;
+textureImageHandle_t TexImgHandle;
+textureRegionHandle_t TexRegHandle;
+spriteHandle_t SpriteHandle;
+animatedSpriteHandle_t AnimSpriteHandle;
 extern world_t world;
 extern entitySpriteList_t entSpriteList;
 extern animatedSpriteList_t animSpriteList;
@@ -246,7 +250,7 @@ sdlFrameBuffer_t createSDLFrameBuffer(int width, int height)
     {
         // Enable blending for framebuffer texture
         SDL_SetTextureBlendMode(fb.texture, SDL_BLENDMODE_BLEND);
-        printf("Created framebuffer: %dx%d\n", width, height);
+        if(com_verbose()) printf("Created framebuffer: %dx%d\n", width, height);
     }
     
     return fb;
@@ -404,6 +408,14 @@ SDL_Texture* loadTexture(char *bmp_path) {
         return NULL;
     }
 
+    /* Most art is paletted PNG with palette transparency; convert to RGBA so
+     * every decoder and renderer (including WebGL) keeps the alpha. */
+    SDL_Surface *rgba = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA32);
+    if(rgba != NULL) {
+        SDL_DestroySurface(surface);
+        surface = rgba;
+    }
+
     texture = SDL_CreateTextureFromSurface(engineParameters.renderer, surface);
     if(!texture) {
         SDL_Log("Couldn't create static texture: %s", SDL_GetError());
@@ -460,11 +472,20 @@ SDL_Texture* loadTexture(char *bmp_path) {
  */
 void loadAnimTextureSDL(const char *path, SDL_Texture *texImg, int row, int col, SDL_Texture ***texArrayOut, int *frameCount)
 {
-    printf("Loading animated texture: %s (%dx%d frames)\n", path, row, col);
+    if(com_verbose()) printf("Loading animated texture: %s (%dx%d frames)\n", path, row, col);
     
     char *resolved = findAssetPath(path);
-    SDL_Surface *atlasSurface = IMG_Load(resolved);
+    SDL_Surface *loadedSurface = IMG_Load(resolved);
     SDL_free(resolved);
+
+    /* Normalise to RGBA before slicing: decoders may return paletted
+     * surfaces (the web build's stb does), and frame surfaces created in an
+     * indexed format would have no palette. */
+    SDL_Surface *atlasSurface = NULL;
+    if(loadedSurface != NULL) {
+        atlasSurface = SDL_ConvertSurface(loadedSurface, SDL_PIXELFORMAT_RGBA32);
+        SDL_DestroySurface(loadedSurface);
+    }
     
     if (!atlasSurface)
     {
@@ -483,7 +504,7 @@ void loadAnimTextureSDL(const char *path, SDL_Texture *texImg, int row, int col,
     float frameHeight = atlasSurface->h / (float)row;
     int totalFrames = row * col;
     
-    printf("Frame size: %.0fx%.0f pixels, Total frames: %d\n", frameWidth, frameHeight, totalFrames);
+    if(com_verbose()) printf("Frame size: %.0fx%.0f pixels, Total frames: %d\n", frameWidth, frameHeight, totalFrames);
     
     // Allocate array of texture pointers
     SDL_Texture **texArray = (SDL_Texture **)zidmalloc(GENERALZONE, sizeof(SDL_Texture *) * totalFrames);
@@ -546,7 +567,7 @@ void loadAnimTextureSDL(const char *path, SDL_Texture *texImg, int row, int col,
     *texArrayOut = texArray;
     *frameCount = totalFrames;
     
-    printf("Successfully created animated texture with %d frames\n", totalFrames);
+    if(com_verbose()) printf("Successfully created animated texture with %d frames\n", totalFrames);
 }
 
 /********************FRAMEBUFFER INITIALIZATION********************/
@@ -643,7 +664,7 @@ void loadTextureAreas(cJSON *jsonTexAreas)
     // texIDList = (int *)zidmalloc(GENERALZONE, sizeof(int) * lines);
     // VAOList = (unsigned int*) zidmalloc(GENERALZONE, sizeof(unsigned int) * lines);
    
-    printf("checking lines %d \n", lines);
+    if(com_verbose()) printf("checking lines %d \n", lines);
     int voff = 0;
     for (int i = 0; i < lines; i++)
     {
@@ -661,6 +682,13 @@ void loadTextureAreas(cJSON *jsonTexAreas)
         v2 = cJSON_GetNumberValue(cJSON_GetArrayItem(jsonTexArea, 8));
         
         voff = 0;
+
+        /* A flip written as [0, -1] needs texture wrapping, which WebGL does
+         * not support for non-power-of-two images. When a range spans a
+         * single tile, shift it into [0, 1]: identical output, no wrapping. */
+        float uLow = floorf(MIN(u1, u2)), vLow = floorf(MIN(v1, v2));
+        if(MAX(u1, u2) - uLow <= 1.0f) { u1 -= uLow; u2 -= uLow; }
+        if(MAX(v1, v2) - vLow <= 1.0f) { v1 -= vLow; v2 -= vLow; }
 
         rect2xywh(&texRegList[i].area, x, y, w, h);
 
@@ -808,7 +836,7 @@ void initTexturesSDL(int isClient)
             // loadTextureSDL(chartemp, &TexImgHandle.texImgList[i], &sdlTex);
             // printf("before load texture \n");
             sdlTex = loadTexture(chartemp);
-            printf("checking file name %s %d \n", chartemp, i);
+            if(com_verbose()) printf("checking file name %s %d \n", chartemp, i);
             // printf("after load texture \n");
 
             SDL_SetTextureScaleMode(sdlTex, SDL_SCALEMODE_NEAREST); 
@@ -857,7 +885,7 @@ void initSpritesSDL(int isClient)
     char *loadPath;
     //sboat_small_vertical
     loadPath = findAssetPath("levels/config/sprite.json");
-    printf("sprite config %s \n", loadPath);
+    if(com_verbose()) printf("sprite config %s \n", loadPath);
 
     fbuf = getFileString(loadPath, TEMPORARYZONE);
     SDL_free(loadPath);
@@ -872,12 +900,12 @@ void initSpritesSDL(int isClient)
 
     jsonSpriteList = cJSON_GetObjectItemCaseSensitive(json, "sprite");
     spriteLen = cJSON_GetArraySize(jsonSpriteList);
-    printf("spriteLen %d \n", spriteLen);
+    if(com_verbose()) printf("spriteLen %d \n", spriteLen);
     
     jsonSpriteFolder = cJSON_GetObjectItemCaseSensitive(jsonSpriteList, "folder");
     spriteFolder = cJSON_GetStringValue(jsonSpriteFolder);
 
-    printf("checking sprite folder %s \n", spriteFolder);
+    if(com_verbose()) printf("checking sprite folder %s \n", spriteFolder);
     
     SpriteHandle.texImgList = (SDL_Texture **)zidmalloc(PERMANENTZONE, sizeof(SDL_Texture*) * spriteLen);
     // SpriteHandle.texNameList = (unsigned int *)zidmalloc(PERMANENTZONE, sizeof(SDL_Texture *) * spriteLen);
@@ -903,7 +931,7 @@ void initSpritesSDL(int isClient)
         writePath += strlen(pathSep);
         strcpy(writePath, spriteFileName);
         
-        printf("Reading sprite file: %s\n", spriteFilePath);
+        if(com_verbose()) printf("Reading sprite file: %s\n", spriteFilePath);
         
         if (isClient)
         {
@@ -953,7 +981,7 @@ void initSpritesSDL(int isClient)
         writePath += strlen(pathSep);
         strcpy(writePath, spriteFileName);
         
-        printf("Reading animated sprite file: %s\n", spriteFilePath);
+        if(com_verbose()) printf("Reading animated sprite file: %s\n", spriteFilePath);
         
         jsonNumVal = cJSON_GetObjectItemCaseSensitive(jsonSpriteObj, "row");
         row = jsonNumVal ? cJSON_GetNumberValue(jsonNumVal) : 1;
@@ -1229,6 +1257,16 @@ void renderWorldTexture(textureRegion_t *texReg) {
         texReg->renderXYList[i] = (texReg->xyList[i] - cameraRect.x)*engineParameters.toWindowRatioX;
         texReg->renderXYList[i+1] = (texReg->xyList[i+1] - cameraRect.y)*engineParameters.toWindowRatioY;
     }
+    /* Only true tiling wraps; everything else clamps. WebGL cannot wrap
+     * non-power-of-two images, so an unneeded wrap would draw black. */
+    bool tiles = false;
+    for(int i = 0; i < 8; i++) {
+        if(texReg->uvList[i] < 0.0f || texReg->uvList[i] > 1.0f)
+            tiles = true;
+    }
+    SDL_TextureAddressMode mode = tiles ? SDL_TEXTURE_ADDRESS_WRAP : SDL_TEXTURE_ADDRESS_CLAMP;
+    SDL_SetRenderTextureAddressMode(sdlRenderer, mode, mode);
+
     SDL_RenderGeometryRaw(sdlRenderer,
         TexImgHandle.texImgList[texReg->texID],
         texReg->renderXYList,
@@ -1306,6 +1344,13 @@ static void ensureDarknessTexture(int width, int height)
         SDL_SetTextureBlendMode(darknessTexture, SDL_BLENDMODE_BLEND);
 }
 
+/* Skip glows and light holes that cannot touch the screen. */
+static bool circleOnScreen(float x, float y, float radius)
+{
+    return x + radius >= cameraRect.x && x - radius <= cameraRect.x + cameraRect.w &&
+           y + radius >= cameraRect.y && y - radius <= cameraRect.y + cameraRect.h;
+}
+
 static void worldCircleToScreen(float x, float y, float radius, SDL_FRect *out)
 {
     float sx, sy;
@@ -1318,7 +1363,7 @@ static void worldCircleToScreen(float x, float y, float radius, SDL_FRect *out)
 
 static void drawGlow(float x, float y, float radius, rgb_t color, Uint8 alpha)
 {
-    if(glowTexture == NULL)
+    if(glowTexture == NULL || !circleOnScreen(x, y, radius))
         return;
     SDL_FRect dest;
     worldCircleToScreen(x, y, radius, &dest);
@@ -1332,6 +1377,8 @@ static void drawGlow(float x, float y, float radius, rgb_t color, Uint8 alpha)
 
 static void eraseDarkness(float x, float y, float radius)
 {
+    if(!circleOnScreen(x, y, radius))
+        return;
     SDL_FRect dest;
     worldCircleToScreen(x, y, radius, &dest);
     SDL_RenderTexture(sdlRenderer, lightTexture, NULL, &dest);
@@ -1849,15 +1896,15 @@ int initGraphicsHandleSDL(SDL_Renderer *renderer, int sx, int sy, int genzoneid,
     
     if (isClient)
     {
-        printf("Initializing SDL rendering system...\n");
-        printf("Screen size: %dx%d\n", sx, sy);
+        if(com_verbose()) printf("Initializing SDL rendering system...\n");
+        if(com_verbose()) printf("Screen size: %dx%d\n", sx, sy);
         
         // Create framebuffers
         createTextureBufferSDL();
         createLightFrameBufferSDL();
         
         // Initialize texture and sprite systems
-        printf("before init textures sdl \n");
+        if(com_verbose()) printf("before init textures sdl \n");
         initTexturesSDL(isClient);
         initSpritesSDL(isClient);
         
@@ -1877,7 +1924,7 @@ int initGraphicsHandleSDL(SDL_Renderer *renderer, int sx, int sy, int genzoneid,
                          SDL_SetTextureBlendMode(lightTexture, eraseBlendMode);
         printf("darkness mask: %s\n", eraseSupported ? "light holes enabled" : "flat fallback");
         
-        printf("SDL rendering system initialized successfully\n");
+        if(com_verbose()) printf("SDL rendering system initialized successfully\n");
     }
 
     // SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");

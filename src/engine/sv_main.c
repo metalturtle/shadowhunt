@@ -77,7 +77,7 @@ void serv_removeSyncedEnt(int entID, int entType)
 
 
         addRep = &vecget(server.clRepList, i);
-        printf("removing synced entity for the client %d \n", i);
+        if(com_verbose()) printf("removing synced entity for the client %d \n", i);
         ent_removeSyncedEntFromClient(entID, addRep, entType);
     }
 }
@@ -121,7 +121,7 @@ serv_clrep_t *serv_addClient()
     clRep->clState = SYS_IDLE;
     clRep->conID = freeid;
     bm_setBitVal(server.clRepBitMap.arr, freeid, 1);
-    printf("\n\n\nadding client. conid=%d\n", freeid);
+    printf("adding client. conid=%d\n", freeid);
     s2imap_put(server.clRepMap, netAddrToString(nextCon->remoteAddress), freeid);
     startTimer(&clRep->lastRecvTimer, 3000);
     inpCmd_init(inpCmdList);
@@ -351,7 +351,7 @@ int serv_readNewConnection(netcon_t *con, bitstream_t *readStream)
     if(state != SYS_CONNECT)
         return -1;
 
-    printf("connect %p %p \n", con, nextCon);
+    if(com_verbose()) printf("connect %p %p \n", con, nextCon);
     serv_addClient();
 
     return 0;
@@ -428,7 +428,7 @@ void serv_writeSysCmd(serv_clrep_t *clRep, bitstream_t *writeStream)
 {
     if(clRep->clState == SYS_IDLE)
     {
-        printf("sending connect state\n");
+        if(com_verbose()) printf("sending connect state\n");
 
         stream_writeByte(writeStream, SERVCMD_SYS);
         stream_writeByte(writeStream, SYS_CONNECT);

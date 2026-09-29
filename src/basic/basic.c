@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
@@ -52,6 +53,16 @@ unsigned long int getTimeElapsed(endTimer_t *timer)
 }
 
 /********************PRINT********************/
+
+/* Startup and asset chatter only prints with SHADOWHUNT_VERBOSE set. */
+qbool com_verbose(void)
+{
+    static int cached = -1;
+    if(cached < 0)
+        cached = getenv("SHADOWHUNT_VERBOSE") != NULL;
+    return cached ? qtrue : qfalse;
+}
+
 
 void com_printf(const char *msg, ...)
 {
@@ -483,11 +494,11 @@ void i2imap_remove(i2imap_t *imap, int key)
 
 #define HASHS2I_LISTSIZE 32
 
-static u_int64_t hash_key(const char *key)
+static uint64_t hash_key(const char *key)
 {
-    u_int64_t hash = FNV_OFFSET;
+    uint64_t hash = FNV_OFFSET;
     for (const char *p = key; *p; p++) {
-        hash ^= (u_int64_t)(unsigned char)(*p);
+        hash ^= (uint64_t)(unsigned char)(*p);
         hash *= FNV_PRIME;
     }
     return hash;
@@ -495,8 +506,8 @@ static u_int64_t hash_key(const char *key)
 
 // static inline s2inode_t *s2imap_getnode(s2imap_t *smap, const char *key)
 // {
-//     u_int64_t hash = hash_key(key);
-//     int index = (int)(hash & (u_int64_t)(smap->capacity - 1));
+//     uint64_t hash = hash_key(key);
+//     int index = (int)(hash & (uint64_t)(smap->capacity - 1));
     
 //     while(smap->list[index].key != NULL) {
 //         if(strcmp(smap->list[index].key,key) == 0) {
@@ -511,8 +522,8 @@ static u_int64_t hash_key(const char *key)
 
 int s2imap_get(s2imap_t *smap, const char *key)
 {
-    u_int64_t hash = hash_key(key);
-    int index = (int)(hash & (u_int64_t)(smap->capacity - 1));
+    uint64_t hash = hash_key(key);
+    int index = (int)(hash & (uint64_t)(smap->capacity - 1));
     
     while(smap->list[index].key != NULL) {
         if(strcmp(smap->list[index].key,key) == 0) {
@@ -529,8 +540,8 @@ int s2imap_get(s2imap_t *smap, const char *key)
 static void s2imap_setval(int zoneid, s2inode_t *list, const char *key, int val, int capacity, int *length)
 {
     char *allockey;
-    u_int64_t hash = hash_key(key);
-    int index = (int)(hash & (u_int64_t)(capacity - 1));
+    uint64_t hash = hash_key(key);
+    int index = (int)(hash & (uint64_t)(capacity - 1));
 
     while(list[index].key != NULL) {
         if(strcmp(list[index].key,key) == 0) {
@@ -600,8 +611,8 @@ void s2imap_put(s2imap_t *smap, const char *key, int val)
 
 void s2imap_remove(s2imap_t *smap, const char *key)
 {
-    u_int64_t hash = hash_key(key);
-    int index = (int)(hash & (u_int64_t)(smap->capacity - 1));
+    uint64_t hash = hash_key(key);
+    int index = (int)(hash & (uint64_t)(smap->capacity - 1));
 
     while(smap->list[index].key != NULL) {
         if(strcmp(smap->list[index].key,key) == 0) {

@@ -1,0 +1,18 @@
+{
+  "round_seconds": 150,
+  "release_ms": 4000,
+  "results_ms": 5000,
+  "lobby_ms": 3000,
+  "power_ms": 7000,
+  "freeze_ms": 5000,
+  "pellet_respawn_ms": 20000,
+  "hunter_speed": 58,
+  "hider_speed": 62,
+  "powered_speed": 80,
+  "lantern_radius": 30,
+  "pickup_reach": 9,
+  "tag_reach": 11,
+  "shot_damage": 34,
+  "hunter_ammo": 90,
+  "shot_interval_ms": 160
+}

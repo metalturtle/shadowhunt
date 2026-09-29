@@ -16,10 +16,9 @@ import time
 from pathlib import Path
 
 
-SERVER_PORT = 8000  # The current executable fixes both server and client target to this port.
 
 
-def reserve_client_ports(count):
+def reserve_client_ports(count, avoid=()):
     sockets = []
     ports = []
     try:
@@ -31,8 +30,8 @@ def reserve_client_ports(count):
     finally:
         for sock in sockets:
             sock.close()
-    if SERVER_PORT in ports:
-        return reserve_client_ports(count)
+    if any(port in avoid for port in ports):
+        return reserve_client_ports(count, avoid)
     return ports
 
 
@@ -86,7 +85,16 @@ def main():
     parser.add_argument("--verify-lit-rounds", action="store_true",
                         help="fully lit fixture: no hider may be withheld from a hunter in rounds 1 or 2")
     parser.add_argument("--level", type=Path, help="level fixture passed to every process via SHADOWHUNT_LEVEL")
+    parser.add_argument("--verify-bots", action="store_true",
+                        help="run every client as a bot and require a bot hunter to win a round and a rematch")
+    parser.add_argument("--render", action="store_true",
+                        help="draw frames in test clients (default: headless, which is far cheaper)")
+    parser.add_argument("--tuning", type=Path, help="tuning file passed to every process via SHADOWHUNT_TUNING")
+    parser.add_argument("--verify-hot-reload", action="store_true",
+                        help="edit a copy of the tuning and level files mid-match and require live reloads")
     parser.add_argument("--round-seconds", type=int, help="shorten the hunt clock via SHADOWHUNT_ROUND_SECONDS")
+    parser.add_argument("--server-port", type=int, default=0,
+                        help="UDP port for the server (default: pick a free one so tests can run in parallel)")
     parser.add_argument("--logs", type=Path, help="directory for logs (defaults to a temporary directory)")
     args = parser.parse_args()
     if not 1 <= args.clients <= 8:
@@ -123,13 +131,30 @@ def main():
     env.setdefault("SDL_VIDEODRIVER", "dummy")
     env.setdefault("SDL_RENDER_DRIVER", "software")
     env["SHADOWHUNT_TEST_LOGS"] = "1"
+    if not args.render:
+        env["SHADOWHUNT_HEADLESS"] = "1"
+    server_port = args.server_port or reserve_client_ports(1)[0]
+    env["SHADOWHUNT_SERVER_PORT"] = str(server_port)
     repo_root = Path(__file__).resolve().parent.parent
     level_path = (args.level if args.level else repo_root / "levels" / "level.json").resolve()
     if args.level:
         env["SHADOWHUNT_LEVEL"] = str(level_path)
     if args.round_seconds:
         env["SHADOWHUNT_ROUND_SECONDS"] = str(args.round_seconds)
+    if args.tuning:
+        env["SHADOWHUNT_TUNING"] = str(args.tuning.resolve())
     level = json.loads(level_path.read_text())
+    reload_dir = None
+    if args.verify_hot_reload:
+        # Work on copies so the test never touches files in the repository.
+        reload_dir = Path(tempfile.mkdtemp(prefix="shadowhunt-reload-"))
+        tuning_source = args.tuning if args.tuning else repo_root / "levels" / "config" / "tuning.json"
+        live_tuning = reload_dir / "tuning.json"
+        live_level = reload_dir / "level.json"
+        live_tuning.write_text(Path(tuning_source).read_text())
+        live_level.write_text(level_path.read_text())
+        env["SHADOWHUNT_TUNING"] = str(live_tuning)
+        env["SHADOWHUNT_LEVEL"] = str(live_level)
     processes = []
     log_files = []
     failure = None
@@ -152,14 +177,14 @@ def main():
                 struct.pack("<IBII", 1, 0, 1, 999999) + b"\x04",
             ])
             for payload in malformed:
-                probe.sendto(payload, ("127.0.0.1", SERVER_PORT))
+                probe.sendto(payload, ("127.0.0.1", server_port))
             probe.close()
             time.sleep(0.2)
             if server.poll() is not None:
                 raise RuntimeError("server exited after malformed UDP datagrams")
             print("PASS: server survived malformed UDP datagrams.", flush=True)
 
-        ports = reserve_client_ports(args.clients)
+        ports = reserve_client_ports(args.clients, avoid={server_port})
         client_logs = []
         for index, port in enumerate(ports, 1):
             path = log_dir / f"client-{index}.log"
@@ -167,12 +192,14 @@ def main():
             log = path.open("w")
             log_files.append(log)
             client_env = env.copy()
+            if args.verify_bots:
+                client_env["SHADOWHUNT_BOT"] = "1"
             if args.verify_authority_disconnect and index == 1:
                 client_env["SHADOWHUNT_TEST_KEYS"] = "d"
             if args.verify_round:
                 client_env["SHADOWHUNT_TEST_KEYS"] = "t"
                 client_env["SHADOWHUNT_TEST_AIM"] = "0"
-            process = subprocess.Popen(command + [str(port)], cwd=repo_root,
+            process = subprocess.Popen(command + [str(port), "127.0.0.1", str(server_port)], cwd=repo_root,
                                        env=client_env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
             processes.append(process)
 
@@ -218,9 +245,7 @@ def main():
                 raise RuntimeError("server did not report a changed entity position after client movement input")
             print("PASS: server reported an authoritative position change.", flush=True)
 
-            owner_match = re.search(
-                r"client ent id -1 \d+ 1\s*\ncreating entity (\d+)\s+\d+", moving_log
-            )
+            owner_match = re.search(r"own entity (\d+)", moving_log)
             if not owner_match:
                 raise RuntimeError("could not identify the moving client's owned server entity from its sync log")
             owner_entity_id = int(owner_match.group(1))
@@ -303,6 +328,41 @@ def main():
                     raise RuntimeError(f"a lit hider was withheld from a hunter: {path.name}")
             print("PASS: lit hiders stayed visible to the hunter across the rematch.", flush=True)
 
+        if args.verify_bots:
+            wait_for("a bot hunter to shoot a bot hider and win",
+                     lambda: server_has("hider eliminated", "round winner: hunters"), 25)
+            wait_for("the bots' rematch", lambda: server_has("round 2: "), 10)
+            if not all("bot: enabled" in read_log(p) for p in client_logs):
+                raise RuntimeError("not every client ran as a bot")
+            print("PASS: bots played a round to a hunter win and started a rematch.", flush=True)
+
+        if args.verify_hot_reload:
+            wait_for("the match to start", lambda: server_has("match state: running"), 15)
+            time.sleep(1.0)
+            tuning = json.loads(live_tuning.read_text())
+            tuning["hunter_speed"] = 123
+            live_tuning.write_text(json.dumps(tuning))
+            wait_for("the server to hot reload tuning", lambda: server_has("hot reload: tuning"), 5)
+            wait_for("clients to receive the new hunter speed from the server",
+                     lambda: all("hunter_speed=123" in read_log(p) for p in client_logs), 5)
+
+            broken_before = read_log(server_path).count("is not valid JSON")
+            live_tuning.write_text("{ not json")
+            wait_for("the server to reject broken tuning",
+                     lambda: read_log(server_path).count("is not valid JSON") > broken_before, 5)
+
+            edited = json.loads(live_level.read_text())
+            edited.setdefault("light", {}).setdefault("object", []).append([10.0, 10.0, 15.0])
+            live_level.write_text(json.dumps(edited))
+            wait_for("the server and every client to hot reload the level layout",
+                     lambda: server_has("hot reload: level layout") and
+                     all("hot reload: level layout" in read_log(p) for p in client_logs), 5)
+            if "stealth layout: %d lights" % len(edited["light"]["object"]) not in read_log(server_path):
+                raise RuntimeError("reloaded layout did not report the added light")
+            if any(process.poll() is not None for process in processes):
+                raise RuntimeError("a process exited during hot reload")
+            print("PASS: tuning and level layout hot reloaded; broken JSON was rejected safely.", flush=True)
+
         if args.verify_tag:
             wait_for("a hider to take a pellet", lambda: server_has("pellet taken"), 12)
             wait_for("the red-hot hider to burn the hunter",
@@ -336,6 +396,8 @@ def main():
         if not keep_logs:
             print(f"Temporary logs retained at {log_dir}", file=sys.stderr)
         return 1
+    if reload_dir:
+        shutil.rmtree(reload_dir, ignore_errors=True)
     if keep_logs:
         print("Process logs retained.")
     else:
